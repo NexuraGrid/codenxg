@@ -129,9 +129,11 @@ function QuickOpenPanel({ root }: { root: string }) {
 
     if (!q) {
       // Empty query: open tabs first (most recent last in the strip, so reversed).
-      const open = new Set(openTabs.map((t) => t.path));
+      // Commit views aren't files on disk.
+      const fileTabs = openTabs.filter((t) => !t.commit);
+      const open = new Set(fileTabs.map((t) => t.path));
       const items = [
-        ...[...openTabs].reverse().map((t) => toItem(root, t.path)),
+        ...[...fileTabs].reverse().map((t) => toItem(root, t.path)),
         ...index.items.filter((f) => !open.has(f.path)),
       ];
       return items.slice(0, MAX_RESULTS).map((item) => ({ item, nameIndices: [], dirIndices: [] }));

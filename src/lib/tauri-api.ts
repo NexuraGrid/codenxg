@@ -152,3 +152,92 @@ export function gitInit(): Promise<void> {
 export function gitShowHead(path: string): Promise<string | null> {
   return invoke("git_show_head", { path });
 }
+
+export interface GitBranch {
+  /** "main", or "origin/main" for a remote branch. */
+  name: string;
+  isRemote: boolean;
+  isCurrent: boolean;
+  upstream: string | null;
+}
+
+export interface GitCommit {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  /** Unix seconds. */
+  timestamp: number;
+  refs: string[];
+}
+
+export interface GitCommitFile {
+  path: string;
+  origPath: string | null;
+  /** A, M, D, R, C or T. */
+  status: string;
+}
+
+export function gitBranches(): Promise<GitBranch[]> {
+  return invoke("git_branches");
+}
+
+export interface SwitchBlock {
+  kind: "local-changes" | "untracked-files" | "unresolved-conflicts" | "other";
+  /** Files git named as the obstacle, relative to the repository. */
+  files: string[];
+  /** git's own message. */
+  detail: string;
+}
+
+/** Either we're on the branch now, or `blocked` says why git refused. */
+export interface SwitchOutcome {
+  switched: boolean;
+  blocked: SwitchBlock | null;
+}
+
+export function gitCheckout(name: string, isRemote: boolean): Promise<SwitchOutcome> {
+  return invoke("git_checkout", { name, isRemote });
+}
+
+/** Creates `name` from `base` (current commit when null); the branch exists even if switching is refused. */
+export function gitCreateBranch(name: string, base: string | null, switchTo: boolean): Promise<SwitchOutcome> {
+  return invoke("git_create_branch", { name, base, switch: switchTo });
+}
+
+/** Stashes every uncommitted change (untracked too), then switches. */
+export function gitStashAndSwitch(name: string): Promise<SwitchOutcome> {
+  return invoke("git_stash_and_switch", { name });
+}
+
+export function gitFetch(): Promise<void> {
+  return invoke("git_fetch");
+}
+
+export function gitLog(skip: number, limit: number): Promise<GitCommit[]> {
+  return invoke("git_log", { skip, limit });
+}
+
+export function gitCommitFiles(hash: string): Promise<GitCommitFile[]> {
+  return invoke("git_commit_files", { hash });
+}
+
+/** A file as of `rev` (a hash, or `hash^` for its parent); null if absent there. */
+export function gitShowAt(rev: string, path: string): Promise<string | null> {
+  return invoke("git_show_at", { rev, path });
+}
+
+/** Starts the language server for `language`; resolves to its name. */
+export function lspStart(language: string, onMessage: (json: string) => void): Promise<string> {
+  const channel = new Channel<string>();
+  channel.onmessage = onMessage;
+  return invoke("lsp_start", { language, onMessage: channel });
+}
+
+export function lspSend(language: string, message: string): Promise<void> {
+  return invoke("lsp_send", { language, message });
+}
+
+export function lspStop(language: string): Promise<void> {
+  return invoke("lsp_stop", { language });
+}
