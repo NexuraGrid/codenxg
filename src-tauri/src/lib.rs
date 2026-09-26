@@ -12,6 +12,7 @@ use commands::git::{
     git_log, git_pull, git_push, git_show_at, git_show_head, git_stage, git_stash_and_switch, git_status, git_unstage,
 };
 use commands::lsp::{lsp_send, lsp_start, lsp_stop, LspRegistry};
+use commands::search::{search_in_workspace, write_search_files};
 use commands::terminal::{close_terminal, create_terminal, resize_terminal, write_to_terminal};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -57,6 +58,8 @@ pub fn run() {
             trash_entry,
             delete_entry,
             list_files,
+            search_in_workspace,
+            write_search_files,
             create_terminal,
             write_to_terminal,
             resize_terminal,

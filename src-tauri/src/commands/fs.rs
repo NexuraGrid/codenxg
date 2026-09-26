@@ -59,8 +59,9 @@ pub fn read_file(state: State<'_, WorkspaceState>, path: String) -> Result<Strin
 }
 
 // Monaco keeps the whole text (plus tokens) in memory and freezes on huge
-// files; a multi-GB log would also stall the IPC bridge.
-const MAX_OPEN_BYTES: u64 = 16 * 1024 * 1024;
+// files; a multi-GB log would also stall the IPC bridge. Also the cap search
+// uses to skip huge files, so a match can always be opened afterwards.
+pub(crate) const MAX_OPEN_BYTES: u64 = 16 * 1024 * 1024;
 
 fn read_text(path: &Path, max_bytes: u64) -> Result<String, String> {
     let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
@@ -84,7 +85,7 @@ pub fn write_file(state: State<'_, WorkspaceState>, path: String, content: Strin
 /// crash mid-save leaves either the old file or the new one, never half of it.
 /// No fsync: on /mnt/c it goes through WSL's 9P bridge and made Ctrl+S lag;
 /// the rename alone already protects against the app crashing mid-write.
-fn write_atomic(path: &Path, content: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, content: &[u8]) -> std::io::Result<()> {
     // Write through a symlink instead of replacing the link with a plain file.
     let target = match std::fs::canonicalize(path) {
         Ok(real) => real,
@@ -298,21 +299,29 @@ pub fn list_files(state: State<'_, WorkspaceState>, root: String) -> Result<File
     Ok(walk_files(&root, MAX_LISTED_FILES))
 }
 
+/// A `.gitignore`-aware walker over `root` that also skips the noisy/heavy
+/// folders above. Shared with search, so both features see the same files.
+pub(crate) fn workspace_walk_builder(root: &Path) -> ignore::WalkBuilder {
+    let mut builder = ignore::WalkBuilder::new(root);
+    builder
+        .hidden(false) // .env, .github: VS Code's quick open shows dotfiles too
+        .require_git(false)
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            !(SKIP_ENTRIES.contains(&name.as_ref()) || SKIP_WHEN_LISTING.contains(&name.as_ref()))
+        });
+    builder
+}
+
 fn walk_files(root: &Path, max: usize) -> FileList {
-    use ignore::{WalkBuilder, WalkState};
+    use ignore::WalkState;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Mutex;
 
     let files = Mutex::new(Vec::new());
     let truncated = AtomicBool::new(false);
 
-    WalkBuilder::new(root)
-        .hidden(false) // .env, .github: VS Code's quick open shows dotfiles too
-        .require_git(false)
-        .filter_entry(|entry| {
-            let name = entry.file_name().to_string_lossy();
-            !(SKIP_ENTRIES.contains(&name.as_ref()) || SKIP_WHEN_LISTING.contains(&name.as_ref()))
-        })
+    workspace_walk_builder(root)
         .build_parallel()
         .run(|| {
             Box::new(|entry| {
