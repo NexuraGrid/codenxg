@@ -112,8 +112,12 @@ fn make_preview(line: &str, match_start: usize, match_end: usize) -> (String, us
     let body: String = chars[from..to].iter().collect();
 
     let preview = format!("{prefix}{body}{suffix}");
-    let offset = prefix.chars().count();
-    (preview, match_start - from + offset, match_end - from + offset)
+    // Offsets are UTF-16 units: the frontend slices the preview as a JS string.
+    let utf16 = |cs: &[char]| cs.iter().map(|c| c.len_utf16()).sum::<usize>();
+    let offset = prefix.encode_utf16().count();
+    let start = offset + utf16(&chars[from..match_start]);
+    let end = start + utf16(&chars[match_start..match_end]);
+    (preview, start, end)
 }
 
 /// Path relative to the workspace root, for glob matching only — results are
@@ -130,8 +134,9 @@ fn matches_in_text(regex: &Regex, text: &str, remaining: usize) -> Vec<SearchMat
         if out.len() >= remaining {
             break;
         }
-        // Byte offsets from the regex are re-mapped to char counts below so
-        // columns line up with Monaco (and with JS string indexing).
+        // Byte offsets from the regex are re-mapped to char counts for the
+        // preview, and to UTF-16 units for columns so they line up with
+        // Monaco (and JS string indexing) even past astral chars like emoji.
         let char_starts: Vec<usize> = line.char_indices().map(|(i, _)| i).collect();
         let byte_to_char = |byte: usize| char_starts.partition_point(|&i| i < byte);
 
@@ -145,8 +150,8 @@ fn matches_in_text(regex: &Regex, text: &str, remaining: usize) -> Vec<SearchMat
 
             out.push(SearchMatch {
                 line: (line_index + 1) as u32,
-                start_column: (start_char + 1) as u32,
-                end_column: (end_char + 1) as u32,
+                start_column: (line[..found.start()].encode_utf16().count() + 1) as u32,
+                end_column: (line[..found.end()].encode_utf16().count() + 1) as u32,
                 match_text: found.as_str().to_string(),
                 preview,
                 preview_match_start: preview_start as u32,
@@ -338,6 +343,17 @@ mod tests {
         let mut q = query("(unterminated");
         q.use_regex = true;
         assert!(build_regex(&q).is_err());
+    }
+
+    #[test]
+    fn columns_are_utf16_units_past_astral_chars() {
+        let regex = build_regex(&query("foo")).unwrap();
+        let found = matches_in_text(&regex, "😀 foo", 10);
+        assert_eq!(found[0].start_column, 4);
+        assert_eq!(found[0].end_column, 7);
+        assert_eq!(&found[0].preview, "😀 foo");
+        assert_eq!(found[0].preview_match_start, 3);
+        assert_eq!(found[0].preview_match_end, 6);
     }
 
     #[test]

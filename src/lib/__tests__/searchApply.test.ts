@@ -49,4 +49,19 @@ describe("applyMatchesToModel", () => {
 
     expect(getModel(PATH)!.getValue()).toBe("1:a 2:b");
   });
+
+  it("skips matches whose text changed since the search (dirty buffer)", () => {
+    createModel(PATH, "let foo = 1;\nconst foo = 2;", "typescript");
+
+    applyMatchesToModel(
+      PATH,
+      [
+        { line: 1, startColumn: 7, endColumn: 10, matchText: "foo" },
+        { line: 2, startColumn: 7, endColumn: 10, matchText: "foo" },
+      ],
+      () => "bar",
+    );
+
+    expect(getModel(PATH)!.getValue()).toBe("let foo = 1;\nconst bar = 2;");
+  });
 });

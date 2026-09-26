@@ -53,3 +53,17 @@ describe("applyMatchesToText", () => {
     expect(result).toBe("only line");
   });
 });
+
+describe("applyMatchesToText stale matches", () => {
+  it("skips a match whose text no longer sits at its range", () => {
+    const result = applyMatchesToText(
+      "let x = 1;\nconst foo = 2;",
+      [
+        { line: 1, startColumn: 7, endColumn: 10, matchText: "foo" },
+        { line: 2, startColumn: 7, endColumn: 10, matchText: "foo" },
+      ],
+      () => "bar",
+    );
+    expect(result).toBe("let x = 1;\nconst bar = 2;");
+  });
+});

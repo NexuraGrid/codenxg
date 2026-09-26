@@ -15,9 +15,9 @@ export interface MatchRange {
 
 /**
  * Replaces every match in `text`, grouped by line and applied right-to-left
- * within each line so earlier columns on the same line stay valid. A match
- * whose line falls outside the text (stale results after an external edit)
- * is skipped rather than throwing.
+ * within each line so earlier columns on the same line stay valid. A stale
+ * match (its line is gone, or its range no longer holds `matchText` after an
+ * edit since the search) is skipped rather than replacing the wrong text.
  */
 export function applyMatchesToText(
   text: string,
@@ -41,6 +41,7 @@ export function applyMatchesToText(
     for (const match of rightToLeft) {
       const start = match.startColumn - 1;
       const end = match.endColumn - 1;
+      if (line.slice(start, end) !== match.matchText) continue;
       line = line.slice(0, start) + replacementFor(match) + line.slice(end);
     }
     lines[index] = line;
