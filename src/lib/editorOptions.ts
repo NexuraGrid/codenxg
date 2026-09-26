@@ -23,6 +23,8 @@ export const EDITOR_OPTIONS: monacoTypes.editor.IStandaloneEditorConstructionOpt
   cursorBlinking: "blink",
   wordWrap: "off",
   bracketPairColorization: { enabled: true },
+  // Standalone Monaco leaves this to the theme, which never opts in.
+  "semanticHighlighting.enabled": true,
   guides: { indentation: true, highlightActiveIndentation: true, bracketPairs: false },
   scrollbar: {
     vertical: "auto",

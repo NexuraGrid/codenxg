@@ -19,6 +19,9 @@ const palette = {
   b1: "e5bf6b",
   b2: "d27ed3",
   b3: "5ea8f0",
+  // Not in the design reference either: a warm tone so parameters stand out
+  // from locals (only servers with semantic tokens, e.g. gopls, report them).
+  param: "d8b58f",
   caret: "6aa8ff",
   guide: "4a4a4a",
 };
@@ -60,6 +63,22 @@ export function applyEditorTheme(monaco: Monaco) {
       { token: "variable", foreground: palette.text },
       { token: "variable.predefined", foreground: palette.b3 },
       { token: "regexp", foreground: palette.b2 },
+      // Semantic tokens from a language server (see lsp/semanticTokens.ts).
+      // Monaco looks them up as "type.modifier...", longest match first.
+      { token: "struct", foreground: palette.b1 },
+      { token: "class", foreground: palette.b1 },
+      { token: "interface", foreground: palette.b1 },
+      { token: "enum", foreground: palette.b1 },
+      { token: "typeParameter", foreground: palette.b1 },
+      { token: "parameter", foreground: palette.param },
+      { token: "enumMember", foreground: palette.b2 },
+      { token: "variable.readonly", foreground: palette.b2 },
+      // Modifiers arrive in the server's order, so a constant's declaration
+      // ("definition" first) is a different key from its uses.
+      { token: "variable.definition.readonly", foreground: palette.b2 },
+      { token: "variable.declaration.readonly", foreground: palette.b2 },
+      // int, string, error... keep the keyword colour the design gives them.
+      { token: "type.defaultLibrary", foreground: palette.kw },
     ],
     colors: {
       "editor.background": `#${palette.panel}`,

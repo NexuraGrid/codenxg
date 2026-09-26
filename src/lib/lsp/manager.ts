@@ -30,6 +30,14 @@ import {
   type RenameProviderCapability,
 } from "./codeActions";
 import { applyWorkspaceEdit } from "./applyEdit";
+import {
+  INITIALIZATION_OPTIONS,
+  SEMANTIC_LANGUAGES,
+  SEMANTIC_TOKENS_CAPABILITY,
+  semanticLegend,
+  toSemanticTokenData,
+  type SemanticTokensProviderCapability,
+} from "./semanticTokens";
 import { ensureModelsForLocations, releaseUnusedLoanedModels } from "./referenceModels";
 import { toRenameLocation } from "./rename";
 import type { ResourceOperation } from "./workspaceEdit";
@@ -52,11 +60,15 @@ interface ServerCapabilities {
   renameProvider?: RenameProviderCapability;
   referencesProvider?: unknown;
   codeActionProvider?: CodeActionProviderCapability;
+  semanticTokensProvider?: SemanticTokensProviderCapability;
 }
 
 class LanguageSession {
   private client!: LspClient;
   private capabilities: ServerCapabilities = {};
+  // Monaco asks for semantic tokens as soon as a provider exists, which is
+  // before the server has been told about the file; this makes it ask again.
+  private readonly semanticTokensChanged = new monaco.Emitter<void>();
   private readonly documents = new Map<monaco.editor.ITextModel, monaco.IDisposable>();
   private readonly providers: monaco.IDisposable[] = [];
   // Raw (pre-toMarker) diagnostics per model, so code actions can hand the
@@ -95,6 +107,7 @@ class LanguageSession {
       rootPath: this.root,
       workspaceFolders: [{ uri: rootUri, name: basename(this.root) }],
       capabilities: CLIENT_CAPABILITIES,
+      initializationOptions: INITIALIZATION_OPTIONS[this.language],
     });
     this.capabilities = result.capabilities ?? {};
     this.client.notify("initialized", {});
@@ -132,6 +145,7 @@ class LanguageSession {
       });
     });
     this.documents.set(model, listener);
+    this.semanticTokensChanged.fire();
   }
 
   close(model: monaco.editor.ITextModel): void {
@@ -165,6 +179,7 @@ class LanguageSession {
     releaseUnusedLoanedModels();
     for (const provider of this.providers) provider.dispose();
     this.providers.length = 0;
+    this.semanticTokensChanged.dispose();
     this.client.close();
     void lspStop(this.language).catch(() => {});
     this.onStopped(this);
@@ -263,6 +278,24 @@ class LanguageSession {
                 };
               }
             : undefined,
+        }),
+      );
+    }
+
+    const legend = SEMANTIC_LANGUAGES.includes(language) ? semanticLegend(caps.semanticTokensProvider) : null;
+    if (legend) {
+      this.providers.push(
+        monaco.languages.registerDocumentSemanticTokensProvider(language, {
+          onDidChange: this.semanticTokensChanged.event,
+          getLegend: () => legend,
+          provideDocumentSemanticTokens: async (model, _lastResultId, token) => {
+            const result = await request<{ data?: number[] } | null>("textDocument/semanticTokens/full", model, {}, token).catch(
+              () => null,
+            );
+            const data = toSemanticTokenData(result);
+            return data ? { data } : null;
+          },
+          releaseDocumentSemanticTokens: () => {},
         }),
       );
     }
@@ -491,6 +524,7 @@ const CLIENT_CAPABILITIES = {
     definition: { linkSupport: true },
     formatting: {},
     publishDiagnostics: {},
+    semanticTokens: SEMANTIC_TOKENS_CAPABILITY,
     rename: { prepareSupport: true },
     references: {},
     codeAction: {
