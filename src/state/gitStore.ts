@@ -1,5 +1,11 @@
 import { create } from "zustand";
 import {
+  gitBranches,
+  gitCheckout,
+  gitCreateBranch,
+  gitStashAndSwitch,
+  gitFetch,
+  gitLog,
   gitCommit,
   gitDiscard,
   gitInit,
@@ -9,11 +15,15 @@ import {
   gitStage,
   gitStatus,
   gitUnstage,
+  type GitBranch,
   type GitChange,
+  type GitCommit,
   type GitStatus,
+  type SwitchOutcome,
 } from "../lib/tauri-api";
 import { basename, dirname } from "../lib/paths";
 import { showDialog } from "./dialogStore";
+import { explainSwitchBlock } from "../lib/switchExplanation";
 
 /** One letter per file, as VS Code shows it next to the name. */
 export type FileDecoration = "M" | "A" | "D" | "R" | "U" | "C";
@@ -30,6 +40,16 @@ interface GitState {
   /** The commit message draft; survives switching sidebar views. */
   message: string;
   setMessage: (message: string) => void;
+  branches: GitBranch[];
+  loadBranches: () => Promise<void>;
+  checkout: (branch: GitBranch) => Promise<void>;
+  /** Creates from `base` (current commit when null) and moves onto it if `switchTo`. */
+  createBranch: (name: string, base?: string | null, switchTo?: boolean) => Promise<boolean>;
+  fetch: () => Promise<void>;
+  /** Commits loaded so far, newest first; `hasMoreHistory` while pages remain. */
+  history: GitCommit[];
+  hasMoreHistory: boolean;
+  loadHistory: (more?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   /** Coalesces bursts (file watcher batches, saves) into one `git status`. */
   scheduleRefresh: () => void;
@@ -43,17 +63,23 @@ interface GitState {
   reset: () => void;
 }
 
+const HISTORY_PAGE = 100;
+const FAILED = Symbol("failed");
 let inFlight: Promise<void> | null = null;
 let refreshAgain = false;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 const headTexts = new Map<string, Promise<string | null>>();
 
 export const useGitStore = create<GitState>((set, get) => {
-  async function run(label: string, action: () => Promise<void>): Promise<boolean> {
+  async function run(label: string, action: () => Promise<unknown>): Promise<boolean> {
+    return (await runFor(label, action)) !== FAILED;
+  }
+
+  /** Runs a git action with a busy label; errors become a dialog and FAILED. */
+  async function runFor<T>(label: string, action: () => Promise<T>): Promise<T | typeof FAILED> {
     set({ busy: label });
     try {
-      await action();
-      return true;
+      return await action();
     } catch (error) {
       await showDialog({
         title: `Git: ${label.replace("…", "")} failed`,
@@ -61,11 +87,43 @@ export const useGitStore = create<GitState>((set, get) => {
         buttons: [{ label: "OK", value: "ok", variant: "primary" }],
         cancelValue: "ok",
       });
-      return false;
+      return FAILED;
     } finally {
       set({ busy: null });
       await get().refresh();
     }
+  }
+
+  /** When git refused to switch: explain why and offer to stash and retry. */
+  async function followUp(target: string, outcome: SwitchOutcome, created: boolean) {
+    if (!outcome.blocked) return;
+    const current = get().status?.branch ?? "the current commit";
+    const { title, message, canStash } = explainSwitchBlock(outcome.blocked, target, current, created);
+    const choice = await showDialog({
+      title,
+      message,
+      buttons: canStash
+        ? [
+            { label: "Stash changes & switch", value: "stash", variant: "primary" },
+            { label: `Stay on ${current}`, value: "stay" },
+          ]
+        : [{ label: "OK", value: "stay", variant: "primary" }],
+      cancelValue: "stay",
+    });
+    if (choice !== "stash") return;
+
+    const retry = await runFor(`Switching to ${target}…`, () => gitStashAndSwitch(target));
+    if (retry === FAILED) return;
+    if (retry.blocked) {
+      await followUp(target, retry, false);
+      return;
+    }
+    await showDialog({
+      title: `Switched to "${target}"`,
+      message: `Your changes from "${current}" were stashed. Switch back and run “git stash pop” to bring them back.`,
+      buttons: [{ label: "OK", value: "ok", variant: "primary" }],
+      cancelValue: "ok",
+    });
   }
 
   return {
@@ -78,6 +136,47 @@ export const useGitStore = create<GitState>((set, get) => {
 
     setMessage: (message) => set({ message }),
 
+    branches: [],
+    loadBranches: async () => {
+      try {
+        set({ branches: await gitBranches() });
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    checkout: async (branch) => {
+      const outcome = await runFor(`Switching to ${branch.name}…`, () => gitCheckout(branch.name, branch.isRemote));
+      // A remote branch is entered through its local namesake.
+      const local = branch.isRemote ? branch.name.slice(branch.name.indexOf("/") + 1) : branch.name;
+      if (outcome !== FAILED) await followUp(local, outcome, false);
+      await Promise.all([get().loadBranches(), get().loadHistory()]);
+    },
+    createBranch: async (name, base = null, switchTo = true) => {
+      const outcome = await runFor(`Creating ${name}…`, () => gitCreateBranch(name, base, switchTo));
+      if (outcome !== FAILED) await followUp(name, outcome, true);
+      await Promise.all([get().loadBranches(), get().loadHistory()]);
+      return outcome !== FAILED;
+    },
+    fetch: async () => {
+      await run("Fetching…", gitFetch);
+      await get().loadBranches();
+    },
+
+    history: [],
+    hasMoreHistory: false,
+    loadHistory: async (more = false) => {
+      const skip = more ? get().history.length : 0;
+      try {
+        const page = await gitLog(skip, HISTORY_PAGE);
+        set((state) => ({
+          history: more ? [...state.history, ...page] : page,
+          hasMoreHistory: page.length === HISTORY_PAGE,
+        }));
+      } catch (error) {
+        console.error(error);
+      }
+    },
+
     refresh: () => {
       if (inFlight) {
         refreshAgain = true;
@@ -89,7 +188,11 @@ export const useGitStore = create<GitState>((set, get) => {
             refreshAgain = false;
             const status = await gitStatus();
             const previousHead = get().status?.headOid;
-            if (status.headOid !== previousHead) headTexts.clear();
+            if (status.headOid !== previousHead) {
+              headTexts.clear();
+              // Commits made here or in the terminal show up in History.
+              if (get().history.length > 0) void get().loadHistory();
+            }
             set((state) => ({
               status,
               ...decorations(status.changes),
@@ -161,7 +264,7 @@ export const useGitStore = create<GitState>((set, get) => {
 
     reset: () => {
       headTexts.clear();
-      set({ status: null, busy: null, byPath: {}, changedDirs: {} });
+      set({ status: null, busy: null, byPath: {}, changedDirs: {}, branches: [], history: [], hasMoreHistory: false });
     },
   };
 });

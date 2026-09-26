@@ -11,6 +11,7 @@ import { installEditorClipboard } from "../lib/editorClipboard";
 import { EDITOR_THEME_ID } from "../lib/editorTheme";
 import { attachGitGutter } from "../lib/gitGutter";
 import { DiffView } from "./DiffView";
+import { CommitDiffView } from "./CommitDiffView";
 import { EDITOR_OPTIONS } from "../lib/editorOptions";
 
 export function MonacoEditor() {
@@ -96,6 +97,10 @@ export function MonacoEditor() {
 
   if (!activeTab) {
     return <div className="empty">No file open</div>;
+  }
+
+  if (activeTab.commit) {
+    return <CommitDiffView key={activeTab.path} tab={activeTab} />;
   }
 
   if (activeTab.showDiff) {

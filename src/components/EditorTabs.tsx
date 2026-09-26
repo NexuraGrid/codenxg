@@ -63,13 +63,15 @@ export function EditorTabs() {
           <div
             key={tab.path}
             className={`tab${tab.path === activeTabPath ? " is-active" : ""}`}
-            title={tab.path}
+            title={tab.commit ? `${tab.commit.file} @ ${tab.commit.shortHash}` : tab.path}
             onClick={() => setActiveTab(tab.path)}
             onAuxClick={(e) => handleAuxClick(e, tab.path)}
             onContextMenu={(e) => handleContextMenu(e, tab.path)}
           >
             <FileIcon name={tab.title} languageId={tab.language} />
             <span>{tab.title}</span>
+            {tab.commit && <span className="tab__hint">{tab.commit.shortHash}</span>}
+            {tab.showDiff && !tab.commit && <span className="tab__hint">diff</span>}
             {tab.isDirty && <span className="tab__dirty">●</span>}
             <button className="tab__close" title="Close" onClick={(e) => handleClose(e, tab.path)}>
               <CloseIcon />

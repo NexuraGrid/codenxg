@@ -9,6 +9,11 @@ export interface EditorTab {
   language: string;
   /** Showing the side-by-side diff against the last commit instead of the file. */
   showDiff?: boolean;
+  /**
+   * A read-only view of one file's change in a past commit. Such tabs are keyed
+   * `commit:<hash>:<file>`, so they never collide with the file's own tab.
+   */
+  commit?: { hash: string; shortHash: string; file: string; origFile: string | null };
 }
 
 interface EditorState {

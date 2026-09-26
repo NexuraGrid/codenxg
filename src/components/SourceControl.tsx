@@ -1,15 +1,19 @@
-import { useEffect, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useGitStore, decorationOf, type FileDecoration } from "../state/gitStore";
 import { useEditorStore } from "../state/editorStore";
 import type { GitChange } from "../lib/tauri-api";
 import { basename, dirname } from "../lib/paths";
 import { languageFromPath } from "../lib/language";
 import { FileIcon } from "./FileIcon";
+import { BranchPicker } from "./BranchPicker";
+import { CreateBranchDialog } from "./CreateBranchDialog";
+import { GitHistory } from "./GitHistory";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
   FileIconLine,
+  BranchPlusIcon,
   GitIcon,
   MinusIcon,
   PlusIcon,
@@ -35,6 +39,10 @@ export function SourceControl({ root }: { root: string }) {
   const busy = useGitStore((s) => s.busy);
   const message = useGitStore((s) => s.message);
   const { refresh, setMessage, commit, push, pull, init, stage, unstage, discard } = useGitStore.getState();
+  const [view, setView] = useState<"changes" | "history">("changes");
+  const [isPickingBranch, setIsPickingBranch] = useState(false);
+  // null = closed; otherwise the name to prefill.
+  const [newBranchName, setNewBranchName] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -73,10 +81,14 @@ export function SourceControl({ root }: { root: string }) {
   return (
     <div className="scm">
       <div className="scm__branch">
-        <GitIcon />
-        <span className="scm__branch-name" title={status.upstream ? `Tracking ${status.upstream}` : "Not published"}>
-          {branch}
-        </span>
+        <button
+          className="scm__branch-btn"
+          title={`${status.upstream ? `Tracking ${status.upstream}` : "Not published"} — click to switch branch`}
+          onClick={() => setIsPickingBranch((open) => !open)}
+        >
+          <GitIcon />
+          <span className="scm__branch-name">{branch}</span>
+        </button>
         {(status.ahead > 0 || status.behind > 0) && (
           <span className="scm__sync-count">
             {status.behind > 0 && `${status.behind}↓ `}
@@ -84,6 +96,9 @@ export function SourceControl({ root }: { root: string }) {
           </span>
         )}
         <span className="scm__spacer" />
+        <button className="icon-btn" title="Create branch…" onClick={() => setNewBranchName("")} disabled={busy !== null}>
+          <BranchPlusIcon />
+        </button>
         <button className="icon-btn" title="Pull" onClick={() => void pull()} disabled={busy !== null}>
           <ArrowDownIcon />
         </button>
@@ -98,54 +113,83 @@ export function SourceControl({ root }: { root: string }) {
         <button className="icon-btn" title="Refresh" onClick={() => void refresh()}>
           <RefreshIcon />
         </button>
+        {isPickingBranch && (
+          <BranchPicker
+            onClose={() => setIsPickingBranch(false)}
+            onCreateAdvanced={(name) => {
+              setIsPickingBranch(false);
+              setNewBranchName(name);
+            }}
+          />
+        )}
+        {newBranchName !== null && (
+          <CreateBranchDialog initialName={newBranchName} onClose={() => setNewBranchName(null)} />
+        )}
       </div>
 
-      <div className="scm__commit">
-        <textarea
-          className="scm__message"
-          placeholder={`Message (Ctrl+Enter to commit on "${branch}")`}
-          value={message}
-          rows={3}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleMessageKey}
-        />
-        <button className="scm__primary" onClick={() => void submit()} disabled={!message.trim() || busy !== null}>
-          <CheckIcon />
-          {busy ?? "Commit"}
+      <div className="scm__views" role="tablist">
+        <button className={view === "changes" ? "is-active" : undefined} onClick={() => setView("changes")}>
+          Changes
+        </button>
+        <button className={view === "history" ? "is-active" : undefined} onClick={() => setView("history")}>
+          History
         </button>
       </div>
 
-      <div className="scm__lists">
-        {conflicts.length > 0 && (
-          <Section
-            title="Merge Changes"
-            changes={conflicts}
-            root={root}
-            letter={() => "C"}
-            actions={[{ title: "Mark as resolved (stage)", Icon: PlusIcon, run: (c) => stage(paths(c)) }]}
-          />
-        )}
-        {staged.length > 0 && (
-          <Section
-            title="Staged Changes"
-            changes={staged}
-            root={root}
-            letter={(c) => (c.index === "A" || c.index === "D" || c.index === "R" ? c.index : "M")}
-            actions={[{ title: "Unstage", Icon: MinusIcon, run: (c) => unstage(paths(c)) }]}
-          />
-        )}
-        <Section
-          title="Changes"
-          changes={unstaged}
-          root={root}
-          letter={(c) => (c.index === "?" ? "U" : decorationOf({ ...c, index: "." }))}
-          actions={[
-            { title: "Discard changes", Icon: UndoIcon, run: (c) => discard(c) },
-            { title: "Stage", Icon: PlusIcon, run: (c) => stage(paths(c)) },
-          ]}
-          emptyText={staged.length === 0 && conflicts.length === 0 ? "No changes. Everything is committed." : undefined}
-        />
-      </div>
+      {view === "history" ? (
+        <div className="scm__lists">
+          <GitHistory root={root} />
+        </div>
+      ) : (
+        <>
+          <div className="scm__commit">
+            <textarea
+              className="scm__message"
+              placeholder={`Message (Ctrl+Enter to commit on "${branch}")`}
+              value={message}
+              rows={3}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleMessageKey}
+            />
+            <button className="scm__primary" onClick={() => void submit()} disabled={!message.trim() || busy !== null}>
+              <CheckIcon />
+              {busy ?? "Commit"}
+            </button>
+          </div>
+
+          <div className="scm__lists">
+            {conflicts.length > 0 && (
+              <Section
+                title="Merge Changes"
+                changes={conflicts}
+                root={root}
+                letter={() => "C"}
+                actions={[{ title: "Mark as resolved (stage)", Icon: PlusIcon, run: (c) => stage(paths(c)) }]}
+              />
+            )}
+            {staged.length > 0 && (
+              <Section
+                title="Staged Changes"
+                changes={staged}
+                root={root}
+                letter={(c) => (c.index === "A" || c.index === "D" || c.index === "R" ? c.index : "M")}
+                actions={[{ title: "Unstage", Icon: MinusIcon, run: (c) => unstage(paths(c)) }]}
+              />
+            )}
+            <Section
+              title="Changes"
+              changes={unstaged}
+              root={root}
+              letter={(c) => (c.index === "?" ? "U" : decorationOf({ ...c, index: "." }))}
+              actions={[
+                { title: "Discard changes", Icon: UndoIcon, run: (c) => discard(c) },
+                { title: "Stage", Icon: PlusIcon, run: (c) => stage(paths(c)) },
+              ]}
+              emptyText={staged.length === 0 && conflicts.length === 0 ? "No changes. Everything is committed." : undefined}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

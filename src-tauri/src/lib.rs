@@ -8,7 +8,8 @@ use commands::fs::{
 use commands::watcher::{watch_dirs, watch_start, WatcherState};
 use commands::workspace::set_workspace;
 use commands::git::{
-    git_commit, git_discard, git_init, git_pull, git_push, git_show_head, git_stage, git_status, git_unstage,
+    git_branches, git_checkout, git_commit, git_commit_files, git_create_branch, git_discard, git_fetch, git_init,
+    git_log, git_pull, git_push, git_show_at, git_show_head, git_stage, git_stash_and_switch, git_status, git_unstage,
 };
 use commands::terminal::{close_terminal, create_terminal, resize_terminal, write_to_terminal};
 
@@ -34,6 +35,14 @@ pub fn run() {
             git_pull,
             git_init,
             git_show_head,
+            git_branches,
+            git_checkout,
+            git_create_branch,
+            git_fetch,
+            git_log,
+            git_commit_files,
+            git_show_at,
+            git_stash_and_switch,
             read_dir,
             read_file,
             write_file,

@@ -771,6 +771,8 @@ body.is-dragging-entry * {
   line-height: 1.5;
   color: var(--text-dim);
   overflow-wrap: anywhere;
+  /* Messages carry file lists and commands on their own lines. */
+  white-space: pre-line;
 }
 
 .dialog__actions {
@@ -1246,4 +1248,259 @@ body.is-dragging-entry * {
 .diff-view__body {
   flex: 1;
   min-height: 0;
+}
+
+.scm__branch {
+  position: relative;
+}
+
+.scm__branch-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 4px;
+}
+
+.scm__branch-btn:hover {
+  background: var(--panel-hover);
+}
+
+.scm__branch-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  stroke-width: 1.8;
+}
+
+.scm__views {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 10px 8px;
+}
+
+.scm__views button {
+  flex: 1;
+  height: 26px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+.scm__views button.is-active {
+  background: var(--panel-active);
+  color: var(--text);
+}
+
+.branch-picker {
+  position: absolute;
+  top: 32px;
+  left: 6px;
+  right: 6px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #161616;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.branch-picker__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.branch-picker__search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #0e0e0e;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.branch-picker__search input:focus {
+  border-color: var(--accent);
+}
+
+.branch-picker__list {
+  margin: 0;
+  padding: 4px 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.branch-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.branch-picker__item.is-selected {
+  background: var(--panel-active);
+}
+
+.branch-picker__item svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.branch-picker__item .is-current {
+  color: var(--git-added);
+}
+
+.branch-picker__meta,
+.branch-picker__empty {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.branch-picker__empty {
+  padding: 6px 10px;
+}
+
+.history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history__commit {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.history__commit:hover {
+  background: var(--panel-hover);
+}
+
+.history__commit .chevron {
+  margin-top: 3px;
+}
+
+.history__text {
+  min-width: 0;
+}
+
+.history__subject {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.history__subject > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history__ref {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: #1c2a44;
+  color: var(--git-renamed);
+  font-size: 10.5px;
+}
+
+.history__meta {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.history__files {
+  margin: 0;
+  padding: 0 0 4px 12px;
+  list-style: none;
+}
+
+.history__more {
+  width: 100%;
+  height: 28px;
+  color: var(--accent);
+  font-size: 12.5px;
+}
+
+.tab__hint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.create-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.create-branch__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.create-branch__field input,
+.create-branch__field select {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #0e0e0e;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.create-branch__field input:focus,
+.create-branch__field select:focus {
+  border-color: var(--accent);
+}
+
+.create-branch__problem {
+  margin: -4px 0 0;
+  color: var(--git-deleted);
+  font-size: 12px;
+}
+
+.create-branch__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.create-branch .dialog__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
