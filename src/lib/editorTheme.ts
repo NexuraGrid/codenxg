@@ -89,8 +89,10 @@ export function applyEditorTheme(monaco: Monaco) {
   });
 }
 
-// Keyword list mirrors the design's highlighter, not Monaco's (which also
-// colors true/false/nil and every sized int type). Calls, members, types and
+// Keywords and the basic types the design colors like keywords (int, string,
+// error...). The rest of the language is layered on top: sized numeric types
+// join them, true/false/nil/iota read as constants and the builtin functions
+// (len, make, append...) as calls. Calls, members, types and ALL_CAPS
 // constants come from enhanceLanguage, like every other language.
 function goLanguage(): monacoTypes.languages.IMonarchLanguage {
   return {
@@ -100,7 +102,16 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
       "package", "import", "func", "var", "const", "type", "defer", "go",
       "for", "range", "return", "if", "else", "switch", "select", "case",
       "default", "break", "continue", "chan", "struct", "map", "interface",
+      "fallthrough", "goto",
       "int", "string", "bool", "error", "byte", "rune", "float64",
+      "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32",
+      "uint64", "uintptr", "float32", "complex64", "complex128", "any", "comparable",
+    ],
+    constants: ["true", "false", "nil", "iota"],
+    builtins: [
+      "append", "cap", "clear", "close", "complex", "copy", "delete", "imag",
+      "len", "make", "max", "min", "new", "panic", "print", "println", "real",
+      "recover",
     ],
     operators: [
       "+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>", "&^", "+=", "-=",
@@ -112,18 +123,28 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
     escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
     tokenizer: {
       root: [
-        [/[a-zA-Z_]\w*/, { cases: { "@keywords": { token: "keyword.$0" }, "@default": "identifier" } }],
+        [
+          /[a-zA-Z_]\w*/,
+          {
+            cases: {
+              "@keywords": { token: "keyword.$0" },
+              "@constants": "constant",
+              "@builtins": "function",
+              "@default": "identifier",
+            },
+          },
+        ],
         { include: "@whitespace" },
         [/[{}()\[\]]/, "@brackets"],
-        [/[<>](?!@symbols)/, "@brackets"],
         [/@symbols/, { cases: { "@operators": "delimiter", "@default": "" } }],
-        [/\d*\d+[eE]([\-+]?\d+)?/, "number.float"],
-        [/\d*\.\d+([eE][\-+]?\d+)?/, "number.float"],
-        [/0[xX][0-9a-fA-F']*[0-9a-fA-F]/, "number.hex"],
-        [/0[0-7']*[0-7]/, "number.octal"],
-        [/0[bB][0-1']*[0-1]/, "number.binary"],
-        [/\d[\d']*/, "number"],
-        [/\d/, "number"],
+        // Go allows `_` between digits and an `i` suffix for imaginary values.
+        [/0[xX][0-9a-fA-F_]+(?:\.[0-9a-fA-F_]*)?(?:[pP][\-+]?\d+)?i?/, "number.hex"],
+        [/0[bB][01_]+i?/, "number.binary"],
+        [/0[oO][0-7_]+i?/, "number.octal"],
+        [/\d[\d_]*\.[\d_]*(?:[eE][\-+]?\d+)?i?/, "number.float"],
+        [/\.\d[\d_]*(?:[eE][\-+]?\d+)?i?/, "number.float"],
+        [/\d[\d_]*[eE][\-+]?\d+i?/, "number.float"],
+        [/\d[\d_]*i?/, "number"],
         [/[;,.]/, "delimiter"],
         [/"([^"\\]|\\.)*$/, "string.invalid"],
         [/"/, "string", "@string"],
@@ -149,7 +170,7 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
         [/"/, "string", "@pop"],
       ],
       rawstring: [
-        [/[^\`]/, "string"],
+        [/[^\`]+/, "string"],
         [/`/, "string", "@pop"],
       ],
     },

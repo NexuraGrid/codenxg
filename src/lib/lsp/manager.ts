@@ -38,7 +38,7 @@ import { basename, pathFromUri } from "../paths";
 import { showDialog } from "../../state/dialogStore";
 
 /** Monaco language ids served by an external language server. */
-const SERVED_LANGUAGES = ["php", "python", "java"];
+const SERVED_LANGUAGES = ["php", "python", "java", "go"];
 // Servers like jdtls hold hundreds of MB: stop them once their files are closed.
 const IDLE_STOP_MS = 3 * 60 * 1000;
 
