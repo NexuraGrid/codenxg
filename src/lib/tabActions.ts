@@ -2,6 +2,7 @@ import { useEditorStore, type EditorTab } from "../state/editorStore";
 import { showDialog } from "../state/dialogStore";
 import { disposeModel } from "./monacoModelRegistry";
 import { saveFile } from "./fileSave";
+import { clearViewState } from "./tabViewState";
 
 /**
  * VS Code's Save / Don't Save / Cancel prompt for modified tabs about to go
@@ -51,7 +52,10 @@ export async function closeTabs(paths: string[], preferredActive?: string): Prom
   if (closing.length === 0) return;
   if (!(await confirmUnsaved(closing))) return;
 
-  closing.forEach((t) => disposeModel(t.path));
+  closing.forEach((t) => {
+    disposeModel(t.path);
+    clearViewState(t.path);
+  });
   removeTabs(
     closing.map((t) => t.path),
     preferredActive,

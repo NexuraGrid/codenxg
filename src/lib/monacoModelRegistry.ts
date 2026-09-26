@@ -1,5 +1,6 @@
 import * as monaco from "monaco-editor";
 import { useEditorStore } from "../state/editorStore";
+import { useSettingsStore } from "../state/settingsStore";
 import { isSameOrInside, rebase } from "./paths";
 import { languageFromPath } from "./language";
 import { releaseIdleLanguageWorkers } from "./languageWorkers";
@@ -36,6 +37,7 @@ export function createModel(path: string, content: string, language: string): mo
   const entry: ModelEntry = { model, path, savedVersionId: model.getAlternativeVersionId(), diskText: content };
   entries.set(path, entry);
   trackDirty(entry);
+  applyIndentSettings(model);
   return model;
 }
 
@@ -44,12 +46,40 @@ function newModel(path: string, content: string, language: string): monaco.edito
   return monaco.editor.createModel(content, language, monaco.Uri.file(path));
 }
 
+// Auto-save's afterDelay mode needs a per-keystroke signal to reset its debounce
+// timer; the editor store deliberately only reports dirty/clean transitions
+// (see setDirty), so listeners are notified straight from the model instead.
+type ChangeListener = (path: string) => void;
+const changeListeners = new Set<ChangeListener>();
+
+export function onModelChange(listener: ChangeListener): () => void {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
+
 function trackDirty(entry: ModelEntry): void {
   const { model } = entry;
   model.onDidChangeContent(() => {
     const dirty = model.getAlternativeVersionId() !== entry.savedVersionId;
     useEditorStore.getState().setDirty(entry.path, dirty);
+    for (const listener of changeListeners) listener(entry.path);
   });
+}
+
+/**
+ * Applies the tab size / insert-spaces / detect-indentation settings to one
+ * model. Detection (when on) overrides the configured tabSize/insertSpaces
+ * from the file's own content, matching Monaco's own `detectIndentation` option.
+ */
+export function applyIndentSettings(model: monaco.editor.ITextModel): void {
+  const { tabSize, insertSpaces, detectIndentation } = useSettingsStore.getState().settings.editor;
+  if (detectIndentation) model.detectIndentation(insertSpaces, tabSize);
+  else model.updateOptions({ tabSize, insertSpaces });
+}
+
+/** Called when the tab size / insert-spaces / detect-indentation settings change live. */
+export function applyIndentSettingsToAllModels(): void {
+  for (const entry of entries.values()) applyIndentSettings(entry.model);
 }
 
 export function markSaved(path: string, diskText: string): void {

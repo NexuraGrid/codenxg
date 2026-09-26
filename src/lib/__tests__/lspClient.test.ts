@@ -63,6 +63,20 @@ describe("LspClient", () => {
     expect(sent[1]).toEqual({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: sent[0].id } });
   });
 
+  it("sends a proper JSON-RPC response for an async onRequest result", async () => {
+    const { client, sent } = setup(() => Promise.resolve({ applied: true }));
+    client.receive(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "workspace/applyEdit", params: {} }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent).toEqual([{ jsonrpc: "2.0", id: 1, result: { applied: true } }]);
+  });
+
+  it("sends a JSON-RPC error when an async onRequest handler rejects", async () => {
+    const { client, sent } = setup(() => Promise.reject(new Error("boom")));
+    client.receive(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "workspace/applyEdit", params: {} }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent[0].error.message).toBe("Error: boom");
+  });
+
   it("fails waiting requests when the server stops", async () => {
     const { client } = setup();
     const pending = client.request("x", {});

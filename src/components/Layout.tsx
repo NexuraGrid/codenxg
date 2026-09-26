@@ -1,19 +1,27 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FileTree } from "./FileTree";
 import { EditorTabs } from "./EditorTabs";
 import { MonacoEditor } from "./MonacoEditor";
 import { TerminalPanel } from "./TerminalPanel";
 import { TerminalTabs } from "./TerminalTabs";
 import { SourceControl } from "./SourceControl";
+import { SearchPanel } from "./SearchPanel";
 import { useGitStore } from "../state/gitStore";
-import { FilesIcon, FolderOpenIcon, GitIcon, GlobeIcon, PencilIcon, TerminalIcon } from "./icons";
+import { useEditorStore } from "../state/editorStore";
+import { FilesIcon, FolderOpenIcon, GearIcon, GitIcon, GlobeIcon, PencilIcon, SearchIcon, TerminalIcon } from "./icons";
 import { QuickOpen } from "./QuickOpen";
 import { useHotkey } from "../lib/useHotkey";
 import { useFileWatcher } from "../lib/fileWatcher";
+import { useAutoSave } from "../lib/useAutoSave";
 import { connectLanguageServers } from "../lib/lsp/manager";
 import { getActiveEditor } from "../lib/editorInstance";
+import { prefillFromSelection } from "../lib/searchQuery";
+import { openSettingsTab } from "../lib/settingsTab";
+import { cancelScheduledSave, flushWorkspaceTabsNow, restoreWorkspaceTabs, scheduleSaveWorkspaceTabs } from "../lib/tabPersistence";
 import { usePaletteStore } from "../state/paletteStore";
+import { useSearchStore } from "../state/searchStore";
 import { useTerminalStore } from "../state/terminalStore";
 
 // Ctrl+E / Ctrl+P are shell bindings too (fish: accept suggestion, history);
@@ -21,10 +29,11 @@ import { useTerminalStore } from "../state/terminalStore";
 const outsideTerminal = (event: KeyboardEvent) =>
   !(event.target instanceof Element && event.target.closest(".xterm"));
 
-type SidebarView = "files" | "git" | "web";
+type SidebarView = "files" | "search" | "git" | "web";
 
 const SIDEBAR_VIEWS: { id: SidebarView; title: string; Icon: ComponentType }[] = [
   { id: "files", title: "Files", Icon: FilesIcon },
+  { id: "search", title: "Search", Icon: SearchIcon },
   { id: "git", title: "Source control", Icon: GitIcon },
   { id: "web", title: "Browser", Icon: GlobeIcon },
 ];
@@ -52,8 +61,51 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
 
   useHotkey("mod+b", toggleOutput);
   useFileWatcher(workspaceRoot);
+  useAutoSave();
   // PHP, Python and Java servers start on demand and stop with the project.
   useEffect(() => connectLanguageServers(workspaceRoot), [workspaceRoot]);
+
+  // Reopens this workspace's remembered tabs the same way a click would
+  // (through addTab), then keeps them in sync as the user works and once more
+  // right before the window actually closes.
+  useEffect(() => {
+    void restoreWorkspaceTabs(workspaceRoot);
+  }, [workspaceRoot]);
+
+  useEffect(() => {
+    const unsubscribe = useEditorStore.subscribe((state, previous) => {
+      if (state.tabs !== previous.tabs || state.activeTabPath !== previous.activeTabPath) {
+        scheduleSaveWorkspaceTabs(workspaceRoot);
+      }
+    });
+    return () => {
+      unsubscribe();
+      // A switch away from this workspace resets the (shared) editor store,
+      // which would otherwise schedule a save for this root; see
+      // cancelScheduledSave's own comment for why that must not fire later.
+      cancelScheduledSave();
+    };
+  }, [workspaceRoot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onCloseRequested(async () => {
+        // Tauri only destroys the window once this resolves: a failed save
+        // must never leave the window impossible to close.
+        await flushWorkspaceTabsNow(workspaceRoot).catch(console.error);
+      })
+      .then((stop) => {
+        if (cancelled) stop();
+        else unlisten = stop;
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [workspaceRoot]);
 
   const changeCount = useGitStore((s) => s.status?.changes.length ?? 0);
   const terminalSessions = useTerminalStore((s) => s.sessions);
@@ -68,6 +120,23 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
   // something else entirely on non-US layouts).
   useHotkey("mod+shift+`", newTerminal, { capture: true, matchCode: "Backquote" });
 
+  // Ctrl+Shift+F: VS Code's project-wide search. Prefills the query from the
+  // editor's current selection, like VS Code does.
+  useHotkey(
+    "mod+shift+f",
+    () => {
+      const editor = getActiveEditor();
+      const model = editor?.getModel();
+      const selection = editor?.getSelection();
+      const selectedText = model && selection ? model.getValueInRange(selection) : "";
+      const prefill = prefillFromSelection(selectedText);
+      if (prefill) useSearchStore.getState().setQuery(prefill);
+      useSearchStore.getState().requestFocus();
+      setSidebarView("search");
+    },
+    { capture: true },
+  );
+
   const openPalette = usePaletteStore((s) => s.open);
   useHotkey("mod+e", () => openPalette(""), { capture: true, when: outsideTerminal });
   useHotkey("mod+p", () => openPalette(""), { capture: true, when: outsideTerminal });
@@ -76,6 +145,8 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
     capture: true,
     when: (event) => outsideTerminal(event) && Boolean(getActiveEditor()?.getModel()),
   });
+
+  useHotkey("mod+,", openSettingsTab, { capture: true });
 
   return (
     <main className="app" data-tauri-drag-region>
@@ -101,8 +172,12 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
               >
                 <FolderOpenIcon />
               </button>
+              <button className="icon-btn" title="Settings (Ctrl+,)" onClick={openSettingsTab}>
+                <GearIcon />
+              </button>
             </nav>
             {sidebarView === "files" && <FileTree rootPath={workspaceRoot} />}
+            {sidebarView === "search" && <SearchPanel root={workspaceRoot} />}
             {sidebarView === "git" && <SourceControl root={workspaceRoot} />}
           </aside>
         </Panel>

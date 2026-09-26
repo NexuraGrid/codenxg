@@ -59,3 +59,23 @@ export function explainSwitchBlock(
       return { title, message: `git said:\n${block.detail}`, canStash: false };
   }
 }
+
+export interface StashActionExplanation {
+  title: string;
+  message: string;
+}
+
+/** Why applying or popping a stash didn't go cleanly, in plain words. */
+export function explainStashError(action: "apply" | "pop", detail: string): StashActionExplanation {
+  const verb = action === "pop" ? "Pop" : "Apply";
+  if (detail.includes("CONFLICT")) {
+    return {
+      title: `${verb} finished with conflicts`,
+      message:
+        "Some files couldn't be merged automatically. Resolve the conflict markers in the affected files, " +
+        "then stage them in the Changes list." +
+        (action === "pop" ? "\n\nThe stash was kept — pop wasn't able to drop it." : ""),
+    };
+  }
+  return { title: `Couldn't ${action} the stash`, message: `git said:\n${detail}` };
+}

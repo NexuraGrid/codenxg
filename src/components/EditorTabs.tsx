@@ -3,7 +3,7 @@ import { useEditorStore } from "../state/editorStore";
 import { closeTabs, pathsToClose, type TabCloseAction } from "../lib/tabActions";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
-import { CloseIcon } from "./icons";
+import { CloseIcon, GearIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 
 interface MenuState {
@@ -63,15 +63,24 @@ export function EditorTabs() {
           <div
             key={tab.path}
             className={`tab${tab.path === activeTabPath ? " is-active" : ""}`}
-            title={tab.commit ? `${tab.commit.file} @ ${tab.commit.shortHash}` : tab.path}
+            title={
+              tab.settings
+                ? "Settings"
+                : tab.commit
+                  ? `${tab.commit.file} @ ${tab.commit.shortHash}`
+                  : tab.stash
+                    ? `${tab.stash.file} @ stash#${tab.stash.index}`
+                    : tab.path
+            }
             onClick={() => setActiveTab(tab.path)}
             onAuxClick={(e) => handleAuxClick(e, tab.path)}
             onContextMenu={(e) => handleContextMenu(e, tab.path)}
           >
-            <FileIcon name={tab.title} languageId={tab.language} />
+            {tab.settings ? <GearIcon className="tab__gear" /> : <FileIcon name={tab.title} languageId={tab.language} />}
             <span>{tab.title}</span>
             {tab.commit && <span className="tab__hint">{tab.commit.shortHash}</span>}
-            {tab.showDiff && !tab.commit && <span className="tab__hint">diff</span>}
+            {tab.stash && <span className="tab__hint">stash#{tab.stash.index}</span>}
+            {tab.showDiff && !tab.commit && !tab.stash && <span className="tab__hint">diff</span>}
             {tab.isDirty && <span className="tab__dirty">●</span>}
             <button className="tab__close" title="Close" onClick={(e) => handleClose(e, tab.path)}>
               <CloseIcon />

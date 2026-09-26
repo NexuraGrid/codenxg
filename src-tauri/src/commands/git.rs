@@ -342,6 +342,179 @@ pub fn git_show_at(workspace: State<'_, WorkspaceState>, rev: String, path: Stri
     show_file(dir, &format!("{rev}:./{}", name.to_string_lossy()))
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStash {
+    pub index: u32,
+    /// The message after "On <branch>: " or "WIP on <branch>: ", without the prefix.
+    pub message: String,
+    /// None when the subject doesn't match git's usual "On/WIP on <branch>: " shape.
+    pub branch: Option<String>,
+    /// Unix seconds.
+    pub timestamp: i64,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StashFileDiff {
+    /// The file before stashing (the stash's base commit); None if it didn't exist there.
+    pub before: Option<String>,
+    /// The file as stashed; None if it doesn't exist (deleted, or unreadable binary).
+    pub after: Option<String>,
+}
+
+#[tauri::command(async)]
+pub fn git_stash_list(workspace: State<'_, WorkspaceState>) -> Result<Vec<GitStash>, String> {
+    let root = workspace_root(&workspace)?;
+    // No stash ref yet: an empty list, not an error.
+    if git(&root, &["rev-parse", "--verify", "-q", "refs/stash"]).is_err() {
+        return Ok(Vec::new());
+    }
+    let raw = git(&root, &["stash", "list", "--format=%gd%x00%s%x00%at%x1e"])?;
+    Ok(parse_stash_list(&raw))
+}
+
+/// Puts uncommitted changes aside as a new stash; the working tree goes back
+/// to HEAD (or to what's still unstashed) once this returns.
+#[tauri::command(async)]
+pub fn git_stash_push(
+    workspace: State<'_, WorkspaceState>,
+    message: Option<String>,
+    include_untracked: bool,
+) -> Result<(), String> {
+    let root = workspace_root(&workspace)?;
+    let mut args = vec!["stash", "push"];
+    if include_untracked {
+        args.push("--include-untracked");
+    }
+    if let Some(message) = message.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        args.push("-m");
+        args.push(message);
+    }
+    git(&root, &args).map(|_| ())
+}
+
+/// Re-applies a stash's changes to the working tree; the stash itself stays.
+/// A conflicting file gets git's usual conflict markers instead of failing outright.
+#[tauri::command(async)]
+pub fn git_stash_apply(workspace: State<'_, WorkspaceState>, index: u32) -> Result<(), String> {
+    let root = workspace_root(&workspace)?;
+    git(&root, &["stash", "apply", &stash_ref(index)]).map(|_| ())
+}
+
+/// Applies a stash and drops it if that succeeded cleanly.
+#[tauri::command(async)]
+pub fn git_stash_pop(workspace: State<'_, WorkspaceState>, index: u32) -> Result<(), String> {
+    let root = workspace_root(&workspace)?;
+    git(&root, &["stash", "pop", &stash_ref(index)]).map(|_| ())
+}
+
+#[tauri::command(async)]
+pub fn git_stash_drop(workspace: State<'_, WorkspaceState>, index: u32) -> Result<(), String> {
+    let root = workspace_root(&workspace)?;
+    git(&root, &["stash", "drop", &stash_ref(index)]).map(|_| ())
+}
+
+/// The files a stash touches, tracked and (when the git version supports it) untracked.
+#[tauri::command(async)]
+pub fn git_stash_files(workspace: State<'_, WorkspaceState>, index: u32) -> Result<Vec<GitCommitFile>, String> {
+    let root = workspace_root(&workspace)?;
+    let toplevel = git(&root, &["rev-parse", "--show-toplevel"])?;
+    let raw = stash_name_status(&root, &stash_ref(index))?;
+    Ok(parse_name_status(&raw, Path::new(toplevel.trim_end())))
+}
+
+/// One file's content before and after a stash, for a read-only diff.
+/// `orig_path` is the pre-rename path when the entry is a rename.
+#[tauri::command(async)]
+pub fn git_stash_file_diff(
+    workspace: State<'_, WorkspaceState>,
+    index: u32,
+    path: String,
+    orig_path: Option<String>,
+) -> Result<StashFileDiff, String> {
+    let path = ensure_in_workspace(&workspace, &path)?;
+    let orig_path = orig_path.map(|p| ensure_in_workspace(&workspace, &p)).transpose()?;
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return Ok(StashFileDiff { before: None, after: None });
+    };
+    let before_path = orig_path.as_deref().unwrap_or(&path);
+    let (Some(before_dir), Some(before_name)) = (before_path.parent(), before_path.file_name()) else {
+        return Ok(StashFileDiff { before: None, after: None });
+    };
+    stash_file_diff(
+        &stash_ref(index),
+        dir,
+        &name.to_string_lossy(),
+        before_dir,
+        &before_name.to_string_lossy(),
+    )
+}
+
+fn stash_ref(index: u32) -> String {
+    format!("stash@{{{index}}}")
+}
+
+/// `git stash show --name-status`, adding untracked files when the installed
+/// git understands `--include-untracked` (added in git 2.31); older ones
+/// just get the tracked changes instead of failing.
+fn stash_name_status(root: &Path, stash: &str) -> Result<String, String> {
+    let with_untracked = git_command(root)
+        .args(["stash", "show", "--include-untracked", "--name-status", "-z", stash])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if with_untracked.status.success() {
+        return Ok(String::from_utf8_lossy(&with_untracked.stdout).into_owned());
+    }
+    git(root, &["stash", "show", "--name-status", "-z", stash])
+}
+
+/// `before` comes from the stash's base commit (`stash@{n}^1`); `after` from
+/// the stash itself, falling back to its untracked-files tree (`^3`) for a
+/// file that was only ever untracked.
+fn stash_file_diff(
+    stash: &str,
+    dir: &Path,
+    name: &str,
+    before_dir: &Path,
+    before_name: &str,
+) -> Result<StashFileDiff, String> {
+    let before = show_file(before_dir, &format!("{stash}^1:./{before_name}"))?;
+    let mut after = show_file(dir, &format!("{stash}:./{name}"))?;
+    if after.is_none() {
+        after = show_file(dir, &format!("{stash}^3:./{name}"))?;
+    }
+    Ok(StashFileDiff { before, after })
+}
+
+/// `git stash list --format=%gd%x00%s%x00%at%x1e`.
+fn parse_stash_list(raw: &str) -> Vec<GitStash> {
+    raw.split('\x1e')
+        .filter_map(|record| {
+            let mut fields = record.trim_start_matches('\n').split('\0');
+            let gd = fields.next()?;
+            let subject = fields.next()?;
+            let timestamp = fields.next()?.parse().ok()?;
+            let index = gd.strip_prefix("stash@{")?.strip_suffix('}')?.parse().ok()?;
+            let (branch, message) = parse_stash_subject(subject);
+            Some(GitStash { index, message, branch, timestamp })
+        })
+        .collect()
+}
+
+/// Splits git's stash subject: the default "WIP on main: 1a2b3c subject", or
+/// "On main: my message" when `git stash push -m` gave it one.
+fn parse_stash_subject(subject: &str) -> (Option<String>, String) {
+    for prefix in ["WIP on ", "On "] {
+        if let Some(rest) = subject.strip_prefix(prefix) {
+            if let Some((branch, message)) = rest.split_once(": ") {
+                return (Some(branch.to_string()), message.to_string());
+            }
+        }
+    }
+    (None, subject.to_string())
+}
+
 // Branch names and hashes come from the UI and end up as git arguments:
 // never let one be read as an option.
 fn reject_option_like(name: &str) -> Result<(), String> {
@@ -541,7 +714,10 @@ fn change(path: String, orig_path: Option<String>, xy: &str, conflicted: bool) -
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_switch_error, parse_branches, parse_log, parse_name_status, parse_status, try_switch, GitChange};
+    use super::{
+        classify_switch_error, parse_branches, parse_log, parse_name_status, parse_stash_list, parse_stash_subject,
+        parse_status, stash_file_diff, stash_name_status, stash_ref, try_switch, GitChange,
+    };
     use std::path::Path;
 
     fn changed(path: &str, index: char, worktree: char) -> GitChange {
@@ -740,5 +916,104 @@ mod tests {
 
         assert!(status.changes[0].conflicted);
         assert_eq!(status.changes[0].path, "/repo/src/merge.ts");
+    }
+
+    #[test]
+    fn formats_the_stash_ref() {
+        assert_eq!(stash_ref(0), "stash@{0}");
+        assert_eq!(stash_ref(3), "stash@{3}");
+    }
+
+    #[test]
+    fn splits_a_custom_stash_message_from_its_branch() {
+        let (branch, message) = parse_stash_subject("On feature/x: fix the thing");
+        assert_eq!(branch.as_deref(), Some("feature/x"));
+        assert_eq!(message, "fix the thing");
+    }
+
+    #[test]
+    fn splits_the_default_wip_message_from_its_branch() {
+        let (branch, message) = parse_stash_subject("WIP on main: 1a2b3c4 previous subject");
+        assert_eq!(branch.as_deref(), Some("main"));
+        assert_eq!(message, "1a2b3c4 previous subject");
+    }
+
+    #[test]
+    fn falls_back_when_the_subject_has_no_recognizable_prefix() {
+        let (branch, message) = parse_stash_subject("something odd");
+        assert_eq!(branch, None);
+        assert_eq!(message, "something odd");
+    }
+
+    #[test]
+    fn parses_a_stash_list_with_two_entries() {
+        let raw = "stash@{0}\0On main: wip feature\01700000000\x1e\n\
+                   stash@{1}\0WIP on main: 1a2b3c4 older commit\01690000000\x1e\n";
+        let stashes = parse_stash_list(raw);
+
+        assert_eq!(stashes.len(), 2);
+        assert_eq!(stashes[0].index, 0);
+        assert_eq!(stashes[0].branch.as_deref(), Some("main"));
+        assert_eq!(stashes[0].message, "wip feature");
+        assert_eq!(stashes[0].timestamp, 1700000000);
+        assert_eq!(stashes[1].index, 1);
+        assert_eq!(stashes[1].message, "1a2b3c4 older commit");
+    }
+
+    #[test]
+    fn skips_a_stash_list_record_missing_its_timestamp() {
+        let raw = "stash@{0}\0On main: wip feature\x1e\nstash@{1}\0On main: ok\01690000000\x1e\n";
+        let stashes = parse_stash_list(raw);
+
+        assert_eq!(stashes.len(), 1);
+        assert_eq!(stashes[0].index, 1);
+    }
+
+    #[test]
+    fn stashes_created_by_real_git_round_trip() {
+        let dir = std::env::temp_dir().join(format!("code-editor-stash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let run = |args: &[&str]| assert!(super::git(&dir, args).is_ok(), "git {args:?} failed");
+        run(&["init", "-q", "-b", "main"]);
+        run(&["config", "user.email", "t@t"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(dir.join("tracked.txt"), "old").unwrap();
+        run(&["add", "-A"]);
+        run(&["commit", "-q", "-m", "init"]);
+
+        std::fs::write(dir.join("tracked.txt"), "new").unwrap();
+        std::fs::write(dir.join("fresh.txt"), "untracked").unwrap();
+        run(&["stash", "push", "-u", "-m", "my message"]);
+
+        let list = parse_stash_list(&super::git(&dir, &["stash", "list", "--format=%gd%x00%s%x00%at%x1e"]).unwrap());
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].index, 0);
+        assert_eq!(list[0].branch.as_deref(), Some("main"));
+        assert_eq!(list[0].message, "my message");
+
+        let raw = stash_name_status(&dir, "stash@{0}").unwrap();
+        let files = parse_name_status(&raw, &dir);
+        let names: Vec<_> = files.iter().map(|f| f.path.clone()).collect();
+        assert!(names.iter().any(|p| p.ends_with("tracked.txt")));
+        assert!(names.iter().any(|p| p.ends_with("fresh.txt")));
+
+        let tracked_diff = stash_file_diff("stash@{0}", &dir, "tracked.txt", &dir, "tracked.txt").unwrap();
+        assert_eq!(tracked_diff.before.as_deref(), Some("old"));
+        assert_eq!(tracked_diff.after.as_deref(), Some("new"));
+
+        let untracked_diff = stash_file_diff("stash@{0}", &dir, "fresh.txt", &dir, "fresh.txt").unwrap();
+        assert_eq!(untracked_diff.before, None);
+        assert_eq!(untracked_diff.after.as_deref(), Some("untracked"));
+
+        // Working tree is back to HEAD until the stash is brought back.
+        assert_eq!(std::fs::read_to_string(dir.join("tracked.txt")).unwrap(), "old");
+        assert!(!dir.join("fresh.txt").exists());
+
+        run(&["stash", "pop", "-q"]);
+        assert_eq!(std::fs::read_to_string(dir.join("tracked.txt")).unwrap(), "new");
+        assert!(dir.join("fresh.txt").exists());
+        assert!(super::git(&dir, &["stash", "list"]).unwrap().trim().is_empty());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

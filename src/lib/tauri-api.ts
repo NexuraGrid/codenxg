@@ -67,21 +67,66 @@ export function listFiles(root: string): Promise<FileList> {
   return invoke("list_files", { root });
 }
 
+export interface SearchQueryInput {
+  query: string;
+  matchCase: boolean;
+  wholeWord: boolean;
+  useRegex: boolean;
+  include: string | null;
+  exclude: string | null;
+}
+
+export interface SearchMatch {
+  line: number;
+  startColumn: number;
+  endColumn: number;
+  matchText: string;
+  preview: string;
+  previewMatchStart: number;
+  previewMatchEnd: number;
+}
+
+export interface FileMatches {
+  path: string;
+  matches: SearchMatch[];
+}
+
+export interface SearchResponse {
+  files: FileMatches[];
+  matchCount: number;
+  truncated: boolean;
+}
+
+export function searchInWorkspace(root: string, query: SearchQueryInput): Promise<SearchResponse> {
+  return invoke("search_in_workspace", { root, query });
+}
+
+/** Writes several files at once (project-wide replace), each atomically. */
+export function writeSearchFiles(files: { path: string; content: string }[]): Promise<void> {
+  return invoke("write_search_files", { files });
+}
+
 // Output streams over a dedicated IPC channel instead of global events: no
 // event-bus broadcast or eval per chunk, which is what made the shell feel slow.
+/**
+ * Resolves to a warning message when the configured shell wasn't found and
+ * the app fell back to auto-detecting one, otherwise null.
+ */
 export function createTerminal(
   id: string,
   cwd: string,
   rows: number,
   cols: number,
+  shellPath: string | undefined,
+  shellArgs: string[] | undefined,
   onOutput: (chunk: string) => void,
   onExit: () => void,
-): Promise<void> {
+): Promise<string | null> {
   const output = new Channel<string>();
   output.onmessage = onOutput;
   const exit = new Channel<null>();
   exit.onmessage = onExit;
-  return invoke("create_terminal", { id, cwd, rows, cols, onOutput: output, onExit: exit });
+  return invoke("create_terminal", { id, cwd, rows, cols, shellPath, shellArgs, onOutput: output, onExit: exit });
 }
 
 export function writeToTerminal(id: string, data: string): Promise<void> {
@@ -227,6 +272,52 @@ export function gitShowAt(rev: string, path: string): Promise<string | null> {
   return invoke("git_show_at", { rev, path });
 }
 
+export interface GitStash {
+  index: number;
+  /** The message, without its "On <branch>: " / "WIP on <branch>: " prefix. */
+  message: string;
+  /** None when the subject doesn't have the usual shape. */
+  branch: string | null;
+  /** Unix seconds. */
+  timestamp: number;
+}
+
+export function gitStashList(): Promise<GitStash[]> {
+  return invoke("git_stash_list");
+}
+
+/** Stashes every uncommitted change; `includeUntracked` also stashes new files. */
+export function gitStashPush(message: string | null, includeUntracked: boolean): Promise<void> {
+  return invoke("git_stash_push", { message, includeUntracked });
+}
+
+/** Re-applies a stash; the stash itself stays (see `gitStashPop` to drop it too). */
+export function gitStashApply(index: number): Promise<void> {
+  return invoke("git_stash_apply", { index });
+}
+
+export function gitStashPop(index: number): Promise<void> {
+  return invoke("git_stash_pop", { index });
+}
+
+export function gitStashDrop(index: number): Promise<void> {
+  return invoke("git_stash_drop", { index });
+}
+
+export function gitStashFiles(index: number): Promise<GitCommitFile[]> {
+  return invoke("git_stash_files", { index });
+}
+
+export interface StashFileDiff {
+  before: string | null;
+  after: string | null;
+}
+
+/** One file's content before and after a stash, for a read-only diff. */
+export function gitStashFileDiff(index: number, path: string, origPath: string | null): Promise<StashFileDiff> {
+  return invoke("git_stash_file_diff", { index, path, origPath });
+}
+
 /** Starts the language server for `language`; resolves to its name. */
 export function lspStart(language: string, onMessage: (json: string) => void): Promise<string> {
   const channel = new Channel<string>();
@@ -240,4 +331,22 @@ export function lspSend(language: string, message: string): Promise<void> {
 
 export function lspStop(language: string): Promise<void> {
   return invoke("lsp_stop", { language });
+}
+
+/** Raw JSON, or `null` if the file was never written yet. */
+export function readSettings(): Promise<string | null> {
+  return invoke("read_settings");
+}
+
+export function writeSettings(content: string): Promise<void> {
+  return invoke("write_settings", { content });
+}
+
+/** Raw JSON, or `null` if the file was never written yet. */
+export function readWorkspacesState(): Promise<string | null> {
+  return invoke("read_workspaces_state");
+}
+
+export function writeWorkspacesState(content: string): Promise<void> {
+  return invoke("write_workspaces_state", { content });
 }

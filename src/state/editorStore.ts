@@ -14,6 +14,13 @@ export interface EditorTab {
    * `commit:<hash>:<file>`, so they never collide with the file's own tab.
    */
   commit?: { hash: string; shortHash: string; file: string; origFile: string | null };
+  /**
+   * A read-only view of one file's change in a stash. Such tabs are keyed
+   * `stash:<index>:<file>`, so they never collide with the file's own tab.
+   */
+  stash?: { index: number; message: string; file: string; origFile: string | null };
+  /** The Settings view, opened as a tab (Ctrl+, or the gear icon) — not a real file. */
+  settings?: boolean;
 }
 
 interface EditorState {

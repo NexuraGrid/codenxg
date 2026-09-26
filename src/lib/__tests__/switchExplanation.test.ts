@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainSwitchBlock } from "../switchExplanation";
+import { explainStashError, explainSwitchBlock } from "../switchExplanation";
 
 describe("explainSwitchBlock", () => {
   it("says the branch exists when it was just created", () => {
@@ -25,5 +25,25 @@ describe("explainSwitchBlock", () => {
   it("falls back to git's own words", () => {
     const text = explainSwitchBlock({ kind: "other", files: [], detail: "fatal: odd" }, "x", "main", false);
     expect(text.message).toContain("fatal: odd");
+  });
+});
+
+describe("explainStashError", () => {
+  it("explains a conflicting apply", () => {
+    const text = explainStashError("apply", "CONFLICT (content): Merge conflict in src/app.ts");
+    expect(text.title).toBe("Apply finished with conflicts");
+    expect(text.message).not.toContain("kept");
+  });
+
+  it("notes the stash was kept when a pop conflicts", () => {
+    const text = explainStashError("pop", "CONFLICT (content): Merge conflict in src/app.ts");
+    expect(text.title).toBe("Pop finished with conflicts");
+    expect(text.message).toContain("The stash was kept");
+  });
+
+  it("falls back to git's own words for anything else", () => {
+    const text = explainStashError("apply", "fatal: no stash entries found.");
+    expect(text.title).toBe("Couldn't apply the stash");
+    expect(text.message).toContain("fatal: no stash entries found.");
   });
 });
