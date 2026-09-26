@@ -5,15 +5,34 @@ import {
   toCompletionItem,
   toLocations,
   toLspPosition,
+  toLspRange,
   toMarkdown,
   toMarker,
   toMonacoEdit,
   toSignatureHelp,
+  type LspCodeAction,
+  type LspCommand,
   type LspCompletionItem,
   type LspDiagnostic,
+  type LspRenameLocation,
   type LspSignatureHelp,
   type LspTextEdit,
+  type LspWorkspaceEdit,
 } from "./protocol";
+import {
+  diagnosticsInRange,
+  normalizeCodeActionResult,
+  providedCodeActionKinds,
+  supportsCodeActionResolve,
+  supportsPrepareRename,
+  toMonacoCodeAction,
+  type CodeActionProviderCapability,
+  type RenameProviderCapability,
+} from "./codeActions";
+import { applyWorkspaceEdit } from "./applyEdit";
+import { ensureModelsForLocations, releaseUnusedLoanedModels } from "./referenceModels";
+import { toRenameLocation } from "./rename";
+import type { ResourceOperation } from "./workspaceEdit";
 import { lspSend, lspStart, lspStop } from "../tauri-api";
 import { showDialog } from "../../state/dialogStore";
 
@@ -29,6 +48,9 @@ interface ServerCapabilities {
   signatureHelpProvider?: { triggerCharacters?: string[]; retriggerCharacters?: string[] };
   definitionProvider?: unknown;
   documentFormattingProvider?: unknown;
+  renameProvider?: RenameProviderCapability;
+  referencesProvider?: unknown;
+  codeActionProvider?: CodeActionProviderCapability;
 }
 
 class LanguageSession {
@@ -36,6 +58,10 @@ class LanguageSession {
   private capabilities: ServerCapabilities = {};
   private readonly documents = new Map<monaco.editor.ITextModel, monaco.IDisposable>();
   private readonly providers: monaco.IDisposable[] = [];
+  // Raw (pre-toMarker) diagnostics per model, so code actions can hand the
+  // server back its own diagnostic objects — including their opaque `data`,
+  // which toMarker's monaco.editor.IMarkerData shape can't carry.
+  private readonly diagnosticsByModel = new Map<monaco.editor.ITextModel, LspDiagnostic[]>();
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
   readonly ready: Promise<boolean>;
@@ -112,6 +138,7 @@ class LanguageSession {
     if (!listener) return;
     listener.dispose();
     this.documents.delete(model);
+    this.diagnosticsByModel.delete(model);
     this.client.notify("textDocument/didClose", { textDocument: { uri: model.uri.toString() } });
     monaco.editor.setModelMarkers(model, this.markerOwner, []);
     if (this.documents.size === 0) this.idleTimer = setTimeout(() => this.stop(), IDLE_STOP_MS);
@@ -133,6 +160,8 @@ class LanguageSession {
       if (!model.isDisposed()) monaco.editor.setModelMarkers(model, this.markerOwner, []);
     }
     this.documents.clear();
+    this.diagnosticsByModel.clear();
+    releaseUnusedLoanedModels();
     for (const provider of this.providers) provider.dispose();
     this.providers.length = 0;
     this.client.close();
@@ -148,7 +177,10 @@ class LanguageSession {
     if (method === "textDocument/publishDiagnostics") {
       const { uri, diagnostics } = params as { uri: string; diagnostics: LspDiagnostic[] };
       const model = monaco.editor.getModel(monaco.Uri.parse(uri));
-      if (model) monaco.editor.setModelMarkers(model, this.markerOwner, diagnostics.map(toMarker));
+      if (model) {
+        this.diagnosticsByModel.set(model, diagnostics);
+        monaco.editor.setModelMarkers(model, this.markerOwner, diagnostics.map(toMarker));
+      }
     } else if (method === "$/codenxg/serverExited") {
       // Crashed or killed from outside: forget it; the next file starts a new one.
       this.stop();
@@ -164,6 +196,11 @@ class LanguageSession {
         const uri = monaco.Uri.file(this.root).toString();
         return [{ uri, name: this.root.split("/").pop() ?? this.root }];
       }
+      case "workspace/applyEdit":
+        // The server pushing its own edits back (e.g. after executeCommand).
+        return applyWorkspaceEdit((params as { edit: LspWorkspaceEdit }).edit)
+          .then((result) => ({ applied: true, ...(result.skippedOperations.length ? { failureReason: "unsupported file operation" } : {}) }))
+          .catch((error: unknown) => ({ applied: false, failureReason: String(error) }));
       case "client/registerCapability":
       case "client/unregisterCapability":
       case "window/workDoneProgress/create":
@@ -293,6 +330,138 @@ class LanguageSession {
         }),
       );
     }
+
+    if (caps.renameProvider) {
+      this.providers.push(
+        monaco.languages.registerRenameProvider(language, {
+          resolveRenameLocation: supportsPrepareRename(caps.renameProvider)
+            ? async (model, position, token) => {
+                const result = await request<LspRenameLocation | null>(
+                  "textDocument/prepareRename",
+                  model,
+                  { position: toLspPosition(position) },
+                  token,
+                ).catch(() => null);
+                // Monaco's own type requires range/text even on a rejection,
+                // but its rename widget only ever reads rejectReason there.
+                return toRenameLocation(
+                  result,
+                  position,
+                  (pos) => {
+                    const word = model.getWordAtPosition(pos);
+                    if (!word) return null;
+                    return {
+                      range: new monaco.Range(pos.lineNumber, word.startColumn, pos.lineNumber, word.endColumn),
+                      text: word.word,
+                    };
+                  },
+                  (range) => model.getValueInRange(range),
+                ) as monaco.languages.RenameLocation & monaco.languages.Rejection;
+              }
+            : undefined,
+          provideRenameEdits: async (model, position, newName, token) => {
+            let edit: LspWorkspaceEdit | null;
+            try {
+              edit = await request<LspWorkspaceEdit | null>(
+                "textDocument/rename",
+                model,
+                { position: toLspPosition(position), newName },
+                token,
+              );
+            } catch (error) {
+              return { edits: [], rejectReason: String(error) };
+            }
+            // We apply the edit ourselves (see applyEdit.ts) instead of
+            // letting Monaco's bulk-edit service handle the returned
+            // WorkspaceEdit: that service can only touch files it already
+            // has a model for, so a rename that reaches an unopened file
+            // would silently fail for that file. Returning no edits tells
+            // Monaco there's nothing left for it to do.
+            const { skippedOperations } = await applyWorkspaceEdit(edit);
+            if (skippedOperations.length) void warnAboutSkippedOperations(skippedOperations);
+            return { edits: [] };
+          },
+        }),
+      );
+    }
+
+    if (caps.referencesProvider) {
+      this.providers.push(
+        monaco.languages.registerReferenceProvider(language, {
+          provideReferences: async (model, position, context, token) => {
+            const result = await request<Parameters<typeof toLocations>[0]>(
+              "textDocument/references",
+              model,
+              { position: toLspPosition(position), context: { includeDeclaration: context.includeDeclaration } },
+              token,
+            ).catch(() => null);
+            const locations = toLocations(result);
+            // Peek needs a model for every result up front to show previews.
+            await ensureModelsForLocations(locations);
+            return locations;
+          },
+        }),
+      );
+    }
+
+    if (caps.codeActionProvider) {
+      const applyCommandId = `codenxg.codeAction.apply.${language}`;
+      this.providers.push(monaco.editor.registerCommand(applyCommandId, (_accessor, action: LspCodeAction) => this.runCodeAction(action)));
+      this.providers.push(
+        monaco.languages.registerCodeActionProvider(
+          language,
+          {
+            provideCodeActions: async (model, range, context, token) => {
+              const rawDiagnostics = this.diagnosticsByModel.get(model) ?? [];
+              const lspRange = toLspRange(range);
+              const result = await request<(LspCodeAction | LspCommand)[] | null>(
+                "textDocument/codeAction",
+                model,
+                {
+                  range: lspRange,
+                  context: {
+                    diagnostics: diagnosticsInRange(rawDiagnostics, lspRange),
+                    only: context.only ? [context.only] : undefined,
+                  },
+                },
+                token,
+              ).catch(() => null);
+              const actions = (result ?? [])
+                .map(normalizeCodeActionResult)
+                .map((action) => toMonacoCodeAction(action, applyCommandId));
+              return { actions, dispose: () => {} };
+            },
+          },
+          { providedCodeActionKinds: providedCodeActionKinds(caps.codeActionProvider) },
+        ),
+      );
+    }
+  }
+
+  /** Runs one code action the user picked from the quick-fix menu. */
+  private async runCodeAction(action: LspCodeAction): Promise<void> {
+    let resolved = action;
+    if (!action.edit && !action.command && supportsCodeActionResolve(this.capabilities.codeActionProvider)) {
+      resolved = await this.client.request<LspCodeAction>("codeAction/resolve", action).catch(() => action);
+    }
+
+    if (resolved.edit) {
+      const { skippedOperations } = await applyWorkspaceEdit(resolved.edit);
+      if (skippedOperations.length) void warnAboutSkippedOperations(skippedOperations);
+    }
+
+    if (resolved.command) {
+      await this.client
+        .request("workspace/executeCommand", { command: resolved.command.command, arguments: resolved.command.arguments })
+        .catch((error: unknown) =>
+          showDialog({
+            title: "Quick fix failed",
+            message: String(error),
+            buttons: [{ label: "OK", value: "ok", variant: "primary" }],
+            cancelValue: "ok",
+          }),
+        );
+    }
   }
 }
 
@@ -318,12 +487,41 @@ const CLIENT_CAPABILITIES = {
     definition: { linkSupport: true },
     formatting: {},
     publishDiagnostics: {},
+    rename: { prepareSupport: true },
+    references: {},
+    codeAction: {
+      codeActionLiteralSupport: {
+        codeActionKind: {
+          valueSet: ["", "quickfix", "refactor", "refactor.extract", "refactor.inline", "refactor.rewrite", "source", "source.organizeImports"],
+        },
+      },
+      isPreferredSupport: true,
+      dataSupport: true,
+      resolveSupport: { properties: ["edit"] },
+    },
   },
-  workspace: { workspaceFolders: true, configuration: true },
+  workspace: {
+    workspaceFolders: true,
+    configuration: true,
+    applyEdit: true,
+    workspaceEdit: { documentChanges: true, resourceOperations: ["create", "rename", "delete"] },
+  },
 };
 
 const noticesShown = new Set<string>();
 const savedListeners = new Set<(model: monaco.editor.ITextModel) => void>();
+
+/** Best-effort notice when a WorkspaceEdit asked for a create/rename/delete
+ * file operation this editor doesn't perform (see applyEdit.ts). */
+async function warnAboutSkippedOperations(operations: ResourceOperation[]): Promise<void> {
+  const summary = operations.map((op) => (op.kind === "rename" ? `rename ${op.uri} -> ${op.newUri}` : `${op.kind} ${op.uri}`)).join("\n");
+  await showDialog({
+    title: "Some file changes were not applied",
+    message: `The language server also asked to:\n\n${summary}\n\nThis editor doesn't perform file create/rename/delete from a language server yet — do it manually if needed.`,
+    buttons: [{ label: "OK", value: "ok", variant: "primary" }],
+    cancelValue: "ok",
+  });
+}
 
 async function explainStartFailure(language: string, error: string) {
   // Once per language per session: not having a server is a choice, not an emergency.

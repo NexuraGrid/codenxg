@@ -16,11 +16,19 @@ interface Cancellable {
 
 export interface ClientHandlers {
   onNotification: (method: string, params: unknown) => void;
-  /** Answers a request from the server; undefined means "not supported". */
+  /**
+   * Answers a request from the server; undefined means "not supported". May
+   * return a Promise (e.g. `workspace/applyEdit`, which applies edits before
+   * answering) — the response is sent once it settles.
+   */
   onRequest: (method: string, params: unknown) => unknown;
 }
 
 const METHOD_NOT_FOUND = -32601;
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return typeof value === "object" && value !== null && typeof (value as PromiseLike<unknown>).then === "function";
+}
 
 /**
  * JSON-RPC 2.0 over any string transport: `send` delivers one message to the
@@ -96,6 +104,14 @@ export class LspClient {
 
   private answer(id: Id, method: string, params: unknown) {
     const result = this.handlers.onRequest(method, params);
+    if (isPromiseLike(result)) {
+      result.then(
+        (value) => this.write({ jsonrpc: "2.0", id, result: value ?? null }),
+        (error: unknown) =>
+          this.write({ jsonrpc: "2.0", id, error: { code: METHOD_NOT_FOUND, message: String(error) } }),
+      );
+      return;
+    }
     if (result === undefined) {
       this.write({ jsonrpc: "2.0", id, error: { code: METHOD_NOT_FOUND, message: `Unhandled method ${method}` } });
     } else {

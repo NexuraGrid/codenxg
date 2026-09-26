@@ -45,6 +45,52 @@ export interface LspDiagnostic {
   code?: string | number;
   source?: string;
   message: string;
+  data?: unknown;
+}
+
+// -- Rename, references and code actions (spec 3.17) --------------------
+
+export interface LspTextDocumentEdit {
+  textDocument: { uri: string; version?: number | null };
+  edits: LspTextEdit[];
+}
+export interface LspCreateFile {
+  kind: "create";
+  uri: string;
+}
+export interface LspRenameFile {
+  kind: "rename";
+  oldUri: string;
+  newUri: string;
+}
+export interface LspDeleteFile {
+  kind: "delete";
+  uri: string;
+}
+export type LspDocumentChange = LspTextDocumentEdit | LspCreateFile | LspRenameFile | LspDeleteFile;
+
+export interface LspWorkspaceEdit {
+  changes?: Record<string, LspTextEdit[]>;
+  documentChanges?: LspDocumentChange[];
+}
+
+export type LspRenameLocation = LspRange | { range: LspRange; placeholder: string } | { defaultBehavior: true };
+
+export interface LspCommand {
+  title: string;
+  command: string;
+  arguments?: unknown[];
+}
+
+export interface LspCodeAction {
+  title: string;
+  kind?: string;
+  diagnostics?: LspDiagnostic[];
+  isPreferred?: boolean;
+  disabled?: { reason: string };
+  edit?: LspWorkspaceEdit;
+  command?: LspCommand;
+  data?: unknown;
 }
 export interface LspSignatureHelp {
   signatures: {
