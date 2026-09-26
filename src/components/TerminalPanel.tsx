@@ -1,13 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { createTerminal, writeToTerminal, resizeTerminal } from "../lib/tauri-api";
 import { useTerminalStore } from "../state/terminalStore";
 import { useSettingsStore } from "../state/settingsStore";
 import { resolveFontFamily } from "../lib/buildEditorOptions";
+import { canCopyTerminalSelection, copyTerminalSelection, pasteIntoTerminal } from "../lib/terminalClipboard";
+import { parseShellArgs } from "../lib/shellArgs";
+import { showDialog } from "../state/dialogStore";
+import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 
 // The default DOM renderer is slow under WebKitGTK; WebGL renders on the GPU.
 // If WebGL is unavailable or its context is lost, xterm keeps the DOM renderer.
@@ -40,11 +44,7 @@ function handleClipboardKeys(terminal: Terminal, event: KeyboardEvent): boolean 
   if (key === "v") {
     // preventDefault also stops the webview's own paste event: no double paste.
     event.preventDefault();
-    readText()
-      .then((text) => {
-        if (text) terminal.paste(text);
-      })
-      .catch(console.error);
+    pasteIntoTerminal(terminal).catch(console.error);
     return false;
   }
 
@@ -63,10 +63,48 @@ interface TerminalPanelProps {
 // when only the font size setting changes.
 const LINE_HEIGHT_RATIO = 17.8 / 13.2;
 
+interface MenuState {
+  x: number;
+  y: number;
+  hasSelection: boolean;
+}
+
 export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  function handleContextMenu(event: MouseEvent) {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY, hasSelection: canCopyTerminalSelection(terminal) });
+  }
+
+  function menuEntries(hasSelection: boolean): ContextMenuEntry[] {
+    return [
+      {
+        type: "item",
+        label: "Copy",
+        disabled: !hasSelection,
+        onSelect: () => {
+          if (terminalRef.current) void copyTerminalSelection(terminalRef.current);
+        },
+      },
+      {
+        type: "item",
+        label: "Paste",
+        onSelect: () => {
+          if (terminalRef.current) void pasteIntoTerminal(terminalRef.current);
+        },
+      },
+      { type: "separator" },
+      { type: "item", label: "Select All", onSelect: () => terminalRef.current?.selectAll() },
+      { type: "item", label: "Clear", onSelect: () => terminalRef.current?.clear() },
+    ];
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -107,16 +145,22 @@ export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) 
       if (cancelled) return;
       if (isVisible()) fitAddon.fit();
 
-      await createTerminal(
+      const { shellPath, shellArgs } = useSettingsStore.getState().settings.terminal;
+      const warning = await createTerminal(
         sessionId,
         cwd,
         terminal.rows,
         terminal.cols,
+        shellPath || undefined,
+        shellPath ? parseShellArgs(shellArgs) : undefined,
         (chunk) => {
           if (!cancelled) terminal.write(chunk);
         },
         () => useTerminalStore.getState().forgetSession(sessionId),
       );
+      if (warning && !cancelled) {
+        void showDialog({ title: "Terminal", message: warning, buttons: [{ label: "OK", value: "ok", variant: "primary" }], cancelValue: "ok" });
+      }
       // No-op for a fresh session; re-syncs a session that survived a reload.
       await resizeTerminal(sessionId, terminal.rows, terminal.cols);
       started = true;
@@ -180,5 +224,14 @@ export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) 
   }, []);
 
   // Hidden with display:none, so the ResizeObserver refits it when shown.
-  return <div ref={containerRef} className={`terminal-panel${isActive ? "" : " is-hidden"}`} />;
+  return (
+    <>
+      <div
+        ref={containerRef}
+        className={`terminal-panel${isActive ? "" : " is-hidden"}`}
+        onContextMenu={handleContextMenu}
+      />
+      {menu && <ContextMenu x={menu.x} y={menu.y} entries={menuEntries(menu.hasSelection)} onClose={closeMenu} />}
+    </>
+  );
 }
