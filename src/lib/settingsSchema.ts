@@ -21,6 +21,10 @@ export interface FilesSettings {
 export interface TerminalSettings {
   fontFamily: string;
   fontSize: number;
+  /** Empty means auto-detect (see shell.rs): pwsh/powershell/cmd on Windows, $SHELL/bash/sh on Unix. */
+  shellPath: string;
+  /** Space-separated; parsed with parseShellArgs (src/lib/shellArgs.ts) before being sent to Rust. */
+  shellArgs: string;
 }
 
 export interface AppSettings {
@@ -54,6 +58,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminal: {
     fontFamily: "IBM Plex Mono",
     fontSize: 13.2,
+    shellPath: "",
+    shellArgs: "",
   },
 };
 
@@ -116,6 +122,10 @@ function mergeTerminal(input: unknown): TerminalSettings {
   return {
     fontFamily: str(source.fontFamily, defaults.fontFamily),
     fontSize: num(source.fontSize, defaults.fontSize, { min: 6, max: 96 }),
+    // str()'s fallback for an empty/invalid value is "" here too, which is
+    // exactly what "auto-detect" means — no separate empty-is-valid case needed.
+    shellPath: str(source.shellPath, defaults.shellPath),
+    shellArgs: str(source.shellArgs, defaults.shellArgs),
   };
 }
 

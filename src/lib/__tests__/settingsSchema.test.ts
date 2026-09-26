@@ -66,4 +66,16 @@ describe("mergeSettings", () => {
     expect(result.editor).toEqual(DEFAULT_SETTINGS.editor);
     expect(result.files).toEqual(DEFAULT_SETTINGS.files);
   });
+
+  it("keeps a configured shell path and args", () => {
+    const result = mergeSettings({ terminal: { shellPath: "/usr/bin/fish", shellArgs: "-l" } });
+    expect(result.terminal.shellPath).toBe("/usr/bin/fish");
+    expect(result.terminal.shellArgs).toBe("-l");
+  });
+
+  it("treats an empty shell path/args as auto-detect, not an error", () => {
+    const result = mergeSettings({ terminal: { shellPath: "", shellArgs: "" } });
+    expect(result.terminal.shellPath).toBe("");
+    expect(result.terminal.shellArgs).toBe("");
+  });
 });

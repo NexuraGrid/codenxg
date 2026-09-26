@@ -196,6 +196,28 @@ export function SettingsView() {
             onChange={(e) => updateTerminal({ fontSize: Number(e.target.value) })}
           />
         </label>
+
+        <label className="settings__field" htmlFor="terminal-shell-path">
+          <span>Shell path</span>
+          <input
+            id="terminal-shell-path"
+            placeholder="Auto-detect"
+            spellCheck={false}
+            value={settings.terminal.shellPath}
+            onChange={(e) => updateTerminal({ shellPath: e.target.value })}
+          />
+        </label>
+
+        <label className="settings__field" htmlFor="terminal-shell-args">
+          <span>Shell args</span>
+          <input
+            id="terminal-shell-args"
+            placeholder="e.g. -NoLogo"
+            spellCheck={false}
+            value={settings.terminal.shellArgs}
+            onChange={(e) => updateTerminal({ shellArgs: e.target.value })}
+          />
+        </label>
       </section>
     </div>
   );

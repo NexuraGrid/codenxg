@@ -108,19 +108,25 @@ export function writeSearchFiles(files: { path: string; content: string }[]): Pr
 
 // Output streams over a dedicated IPC channel instead of global events: no
 // event-bus broadcast or eval per chunk, which is what made the shell feel slow.
+/**
+ * Resolves to a warning message when the configured shell wasn't found and
+ * the app fell back to auto-detecting one, otherwise null.
+ */
 export function createTerminal(
   id: string,
   cwd: string,
   rows: number,
   cols: number,
+  shellPath: string | undefined,
+  shellArgs: string[] | undefined,
   onOutput: (chunk: string) => void,
   onExit: () => void,
-): Promise<void> {
+): Promise<string | null> {
   const output = new Channel<string>();
   output.onmessage = onOutput;
   const exit = new Channel<null>();
   exit.onmessage = onExit;
-  return invoke("create_terminal", { id, cwd, rows, cols, onOutput: output, onExit: exit });
+  return invoke("create_terminal", { id, cwd, rows, cols, shellPath, shellArgs, onOutput: output, onExit: exit });
 }
 
 export function writeToTerminal(id: string, data: string): Promise<void> {

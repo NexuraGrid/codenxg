@@ -1,3 +1,4 @@
+use super::shell::{env_lookup, host_os, program_exists, resolve_shell, wants_term_env};
 use super::workspace::ensure_in_workspace;
 use crate::state::{SessionChannels, TerminalRegistry, TerminalSession, WorkspaceState};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -20,9 +21,11 @@ pub fn create_terminal(
     cwd: String,
     rows: u16,
     cols: u16,
+    shell_path: Option<String>,
+    shell_args: Option<Vec<String>>,
     on_output: Channel<String>,
     on_exit: Channel<()>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let cwd = ensure_in_workspace(&workspace, &cwd)?;
 
     // StrictMode double-mounts and webview reloads call this for a session
@@ -34,7 +37,7 @@ pub fn create_terminal(
                 output: on_output,
                 exit: on_exit,
             };
-            return Ok(());
+            return Ok(None);
         }
     }
 
@@ -50,9 +53,21 @@ pub fn create_terminal(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-    let mut cmd = CommandBuilder::new(shell);
+    let resolution = resolve_shell(
+        host_os(),
+        shell_path.as_deref(),
+        &shell_args.unwrap_or_default(),
+        &env_lookup,
+        &program_exists,
+    );
+    let mut cmd = CommandBuilder::new(&resolution.shell.program);
+    cmd.args(&resolution.shell.args);
     cmd.cwd(cwd);
+    // Most CLI tools (and the shell's own prompt) probe TERM to decide what
+    // they can draw; cmd.exe is the one shell here that doesn't use it.
+    if wants_term_env(&resolution.shell.program) {
+        cmd.env("TERM", "xterm-256color");
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     // Drop our copy of the slave end now that the child owns it — otherwise
@@ -120,7 +135,7 @@ pub fn create_terminal(
         }
     });
 
-    Ok(())
+    Ok(resolution.warning)
 }
 
 #[tauri::command(async)]
