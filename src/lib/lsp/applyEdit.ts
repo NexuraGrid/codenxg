@@ -8,6 +8,7 @@
 // in monaco-editor), so it can't touch a file this editor hasn't opened.
 import * as monaco from "monaco-editor";
 import { getModel } from "../monacoModelRegistry";
+import { pathFromUri } from "../paths";
 import { readFile, writeSearchFiles } from "../tauri-api";
 import { toMonacoEdit, type LspWorkspaceEdit } from "./protocol";
 import { applyEditsToText, normalizeWorkspaceEdit, type ResourceOperation } from "./workspaceEdit";
@@ -25,7 +26,7 @@ export async function applyWorkspaceEdit(edit: LspWorkspaceEdit | null | undefin
 
   for (const { uri, edits } of fileEdits) {
     if (edits.length === 0) continue;
-    const path = monaco.Uri.parse(uri).path;
+    const path = pathFromUri(monaco.Uri.parse(uri));
     const model = getModel(path);
     if (model) {
       model.pushStackElement();

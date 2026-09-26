@@ -12,6 +12,7 @@
 import * as monaco from "monaco-editor";
 import { useEditorStore } from "../../state/editorStore";
 import { createModel, disposeModel, getModel } from "../monacoModelRegistry";
+import { pathFromUri } from "../paths";
 import { readFile } from "../tauri-api";
 import { languageFromPath } from "../language";
 
@@ -21,7 +22,7 @@ let loanedPaths = new Set<string>();
 export async function ensureModelsForLocations(locations: monaco.languages.Location[]): Promise<void> {
   releaseUnusedLoanedModels();
 
-  const paths = new Set(locations.map((l) => l.uri.path));
+  const paths = new Set(locations.map((l) => pathFromUri(l.uri)));
   await Promise.all(
     [...paths].map(async (path) => {
       if (getModel(path)) return;

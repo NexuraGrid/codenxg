@@ -34,6 +34,7 @@ import { ensureModelsForLocations, releaseUnusedLoanedModels } from "./reference
 import { toRenameLocation } from "./rename";
 import type { ResourceOperation } from "./workspaceEdit";
 import { lspSend, lspStart, lspStop } from "../tauri-api";
+import { basename, pathFromUri } from "../paths";
 import { showDialog } from "../../state/dialogStore";
 
 /** Monaco language ids served by an external language server. */
@@ -92,7 +93,7 @@ class LanguageSession {
       processId: null,
       rootUri,
       rootPath: this.root,
-      workspaceFolders: [{ uri: rootUri, name: this.root.split("/").pop() ?? this.root }],
+      workspaceFolders: [{ uri: rootUri, name: basename(this.root) }],
       capabilities: CLIENT_CAPABILITIES,
     });
     this.capabilities = result.capabilities ?? {};
@@ -176,7 +177,10 @@ class LanguageSession {
   private onNotification(method: string, params: unknown) {
     if (method === "textDocument/publishDiagnostics") {
       const { uri, diagnostics } = params as { uri: string; diagnostics: LspDiagnostic[] };
-      const model = monaco.editor.getModel(monaco.Uri.parse(uri));
+      // Re-encode through our canonical path form: a server is free to send
+      // back a differently-cased drive letter than the one our own model's
+      // Uri was created with, which would otherwise miss on Windows.
+      const model = monaco.editor.getModel(monaco.Uri.file(pathFromUri(monaco.Uri.parse(uri))));
       if (model) {
         this.diagnosticsByModel.set(model, diagnostics);
         monaco.editor.setModelMarkers(model, this.markerOwner, diagnostics.map(toMarker));
@@ -194,7 +198,7 @@ class LanguageSession {
         return ((params as { items?: unknown[] }).items ?? []).map(() => null);
       case "workspace/workspaceFolders": {
         const uri = monaco.Uri.file(this.root).toString();
-        return [{ uri, name: this.root.split("/").pop() ?? this.root }];
+        return [{ uri, name: basename(this.root) }];
       }
       case "workspace/applyEdit":
         // The server pushing its own edits back (e.g. after executeCommand).

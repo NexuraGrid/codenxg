@@ -1,7 +1,7 @@
 import * as monaco from "monaco-editor";
 import { useEditorStore } from "../state/editorStore";
 import { getActiveEditor } from "./editorInstance";
-import { basename } from "./paths";
+import { basename, pathFromUri } from "./paths";
 import { languageFromPath } from "./language";
 
 // Where to put the cursor once a file's model is shown (go to definition).
@@ -34,7 +34,7 @@ export function registerFileOpener(): monaco.IDisposable {
   return monaco.editor.registerEditorOpener({
     openCodeEditor(_source, resource, selectionOrPosition) {
       if (resource.scheme !== "file") return false;
-      const path = resource.path;
+      const path = pathFromUri(resource);
       const store = useEditorStore.getState();
       const active = getActiveEditor();
 
