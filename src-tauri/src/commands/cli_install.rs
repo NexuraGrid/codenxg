@@ -5,9 +5,18 @@ pub fn install_cli() -> Result<String, String> {
     install()
 }
 
+/// Wrapper for `~/.local/bin/codenxg`. `setsid -f` detaches the app so the
+/// terminal gets its prompt back; it can't be done from inside the AppImage,
+/// whose runtime unmounts the app as soon as the launched process exits.
+#[cfg(target_os = "linux")]
+fn launcher_script(appimage: &std::path::Path) -> String {
+    let quoted = format!("'{}'", appimage.display().to_string().replace('\'', "'\\''"));
+    format!("#!/bin/sh\nexec setsid -f {quoted} \"$@\" >/dev/null 2>&1 </dev/null\n")
+}
+
 #[cfg(target_os = "linux")]
 fn install() -> Result<String, String> {
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
 
     // Set by the AppImage runtime. Packaged installs (.deb/.rpm) already put
@@ -20,11 +29,13 @@ fn install() -> Result<String, String> {
     let bin_dir = home.join(".local/bin");
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
     let link = bin_dir.join("codenxg");
-    // Replace a stale link from an earlier location of the AppImage.
+    // Remove first: an older install may have left a symlink to the AppImage,
+    // and writing through it would overwrite the app itself.
     if link.symlink_metadata().is_ok() {
         std::fs::remove_file(&link).map_err(|e| e.to_string())?;
     }
-    symlink(&appimage, &link).map_err(|e| e.to_string())?;
+    std::fs::write(&link, launcher_script(&appimage)).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
 
     let icon_dir = home.join(".local/share/icons/hicolor/128x128/apps");
     std::fs::create_dir_all(&icon_dir).map_err(|e| e.to_string())?;
@@ -43,10 +54,23 @@ fn install() -> Result<String, String> {
         .map(|p| std::env::split_paths(&p).any(|d| d == bin_dir))
         .unwrap_or(false);
     Ok(if on_path {
-        "Installed. Run `codenxg .` in any terminal. Run this again if you move the AppImage.".into()
+        "Installed. Run `codenxg .` in any terminal; it returns the prompt right away. Run this again if you move the AppImage.".into()
     } else {
         "Installed, but ~/.local/bin is not on your PATH. Add it to your shell config, then run `codenxg .`.".into()
     })
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::launcher_script;
+    use std::path::Path;
+
+    #[test]
+    fn launcher_quotes_paths_with_spaces_and_quotes() {
+        let script = launcher_script(Path::new("/home/a b/it's/CodeNXG.AppImage"));
+        assert!(script.contains(r"exec setsid -f '/home/a b/it'\''s/CodeNXG.AppImage' "));
+        assert!(script.starts_with("#!/bin/sh\n"));
+    }
 }
 
 #[cfg(windows)]
