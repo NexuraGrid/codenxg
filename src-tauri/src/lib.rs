@@ -15,6 +15,7 @@ use commands::git::{
 };
 use commands::lsp::{lsp_send, lsp_start, lsp_stop, LspRegistry};
 use commands::search::{search_in_workspace, write_search_files};
+use commands::settings::{read_settings, read_workspaces_state, write_settings, write_workspaces_state};
 use commands::terminal::{close_terminal, create_terminal, resize_terminal, write_to_terminal};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,6 +74,10 @@ pub fn run() {
             write_to_terminal,
             resize_terminal,
             close_terminal,
+            read_settings,
+            write_settings,
+            read_workspaces_state,
+            write_workspaces_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

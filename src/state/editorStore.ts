@@ -19,6 +19,8 @@ export interface EditorTab {
    * `stash:<index>:<file>`, so they never collide with the file's own tab.
    */
   stash?: { index: number; message: string; file: string; origFile: string | null };
+  /** The Settings view, opened as a tab (Ctrl+, or the gear icon) — not a real file. */
+  settings?: boolean;
 }
 
 interface EditorState {

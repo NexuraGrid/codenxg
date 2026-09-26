@@ -6,6 +6,8 @@ import "@xterm/xterm/css/xterm.css";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { createTerminal, writeToTerminal, resizeTerminal } from "../lib/tauri-api";
 import { useTerminalStore } from "../state/terminalStore";
+import { useSettingsStore } from "../state/settingsStore";
+import { resolveFontFamily } from "../lib/buildEditorOptions";
 
 // The default DOM renderer is slow under WebKitGTK; WebGL renders on the GPU.
 // If WebGL is unavailable or its context is lost, xterm keeps the DOM renderer.
@@ -56,14 +58,21 @@ interface TerminalPanelProps {
   isActive: boolean;
 }
 
+// The original hardcoded ratio (17.8 / 13.2): xterm's lineHeight is a
+// multiplier over fontSize, not a pixel value, so it doesn't need to change
+// when only the font size setting changes.
+const LINE_HEIGHT_RATIO = 17.8 / 13.2;
+
 export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    const initialSettings = useSettingsStore.getState().settings.terminal;
     const terminal = new Terminal({
       theme: {
         background: "#121212",
@@ -71,12 +80,13 @@ export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) 
         cursor: "#6aa8ff",
         selectionBackground: "#3b82f633",
       },
-      fontFamily: '"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace',
-      fontSize: 13.2,
-      lineHeight: 17.8 / 13.2,
+      fontFamily: resolveFontFamily(initialSettings.fontFamily),
+      fontSize: initialSettings.fontSize,
+      lineHeight: LINE_HEIGHT_RATIO,
       cursorBlink: true,
     });
     const fitAddon = new FitAddon();
+    fitAddonRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
     terminal.open(container);
     tryEnableWebgl(terminal);
@@ -141,6 +151,7 @@ export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) 
       resizeDisposable.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      fitAddonRef.current = null;
       // Deliberately NOT calling closeTerminal(sessionId) here: React StrictMode's
       // dev-mode double-invoke would kill the PTY right before the real remount
       // reattaches to it. Shells are killed explicitly by the terminal store.
@@ -150,6 +161,23 @@ export function TerminalPanel({ sessionId, cwd, isActive }: TerminalPanelProps) 
   useEffect(() => {
     if (isActive) terminalRef.current?.focus();
   }, [isActive]);
+
+  // Applied live, without recreating the terminal (which would drop its
+  // scrollback and detach it from the running shell).
+  useEffect(() => {
+    return useSettingsStore.subscribe((state, previous) => {
+      const next = state.settings.terminal;
+      const prev = previous.settings.terminal;
+      if (next.fontFamily === prev.fontFamily && next.fontSize === prev.fontSize) return;
+
+      const terminal = terminalRef.current;
+      if (!terminal) return;
+      terminal.options = { ...terminal.options, fontFamily: resolveFontFamily(next.fontFamily), fontSize: next.fontSize };
+
+      const container = containerRef.current;
+      if (container && container.clientWidth > 0 && container.clientHeight > 0) fitAddonRef.current?.fit();
+    });
+  }, []);
 
   // Hidden with display:none, so the ResizeObserver refits it when shown.
   return <div ref={containerRef} className={`terminal-panel${isActive ? "" : " is-hidden"}`} />;

@@ -1764,3 +1764,84 @@ body.is-dragging-entry * {
   background: rgba(59, 130, 246, 0.35);
   border-radius: 2px;
 }
+
+/* ================= SETTINGS ================= */
+.settings {
+  height: 100%;
+  overflow: auto;
+  padding: 20px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.settings__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings__section h3 {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 320px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.settings__field input,
+.settings__field select {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #0e0e0e;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.settings__field input:focus,
+.settings__field select:focus {
+  border-color: var(--accent);
+}
+
+.settings__field input:disabled,
+.settings__field select:disabled {
+  opacity: 0.5;
+}
+
+.settings__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.tab__gear {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  stroke-width: 1.8;
+}

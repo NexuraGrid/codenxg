@@ -326,3 +326,21 @@ export function lspSend(language: string, message: string): Promise<void> {
 export function lspStop(language: string): Promise<void> {
   return invoke("lsp_stop", { language });
 }
+
+/** Raw JSON, or `null` if the file was never written yet. */
+export function readSettings(): Promise<string | null> {
+  return invoke("read_settings");
+}
+
+export function writeSettings(content: string): Promise<void> {
+  return invoke("write_settings", { content });
+}
+
+/** Raw JSON, or `null` if the file was never written yet. */
+export function readWorkspacesState(): Promise<string | null> {
+  return invoke("read_workspaces_state");
+}
+
+export function writeWorkspacesState(content: string): Promise<void> {
+  return invoke("write_workspaces_state", { content });
+}

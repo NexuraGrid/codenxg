@@ -1,27 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type * as monacoTypes from "monaco-editor";
 import { useEditorStore, type EditorTab } from "../state/editorStore";
+import { useSettingsStore } from "../state/settingsStore";
 import { showDialog } from "../state/dialogStore";
 import { readFile } from "../lib/tauri-api";
-import { getModel, createModel } from "../lib/monacoModelRegistry";
+import { getModel, createModel, pathOfModel } from "../lib/monacoModelRegistry";
 import { saveFile } from "../lib/fileSave";
 import { setActiveEditor } from "../lib/editorInstance";
 import { installEditorClipboard } from "../lib/editorClipboard";
 import { EDITOR_THEME_ID } from "../lib/editorTheme";
 import { attachGitGutter } from "../lib/gitGutter";
 import { applyPendingReveal } from "../lib/editorNavigation";
+import { getViewState, setViewState } from "../lib/tabViewState";
+import { buildEditorOptions } from "../lib/buildEditorOptions";
 import { DiffView } from "./DiffView";
 import { CommitDiffView } from "./CommitDiffView";
 import { StashDiffView } from "./StashDiffView";
-import { EDITOR_OPTIONS } from "../lib/editorOptions";
+import { SettingsView } from "./SettingsView";
 
 export function MonacoEditor() {
   const editorRef = useRef<monacoTypes.editor.IStandaloneCodeEditor | null>(null);
   const requestedPathRef = useRef<string | null>(null);
+  const previousPathRef = useRef<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabPath = useEditorStore((s) => s.activeTabPath);
+  const editorSettings = useSettingsStore((s) => s.settings.editor);
+  const options = useMemo(() => buildEditorOptions(editorSettings), [editorSettings]);
 
   const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
 
@@ -49,15 +55,36 @@ export function MonacoEditor() {
 
     if (requestedPathRef.current === tab.path) {
       editor.setModel(model);
+      const saved = getViewState(tab.path);
+      if (saved) {
+        try {
+          editor.restoreViewState(saved);
+        } catch {
+          // A stale view state from an older session/Monaco version: ignore it.
+        }
+      }
+      // A deliberate navigation (go to definition, a search result) overrides
+      // whatever cursor/scroll position was just restored above.
       applyPendingReveal(editor, tab.path);
     }
   }
 
   // Swap the model on the existing editor instance instead of recreating it
-  // — this is what preserves undo history, cursor position and scroll.
+  // — this is what preserves undo history, cursor position and scroll. The
+  // outgoing tab's view state is captured first, so switching back restores it.
   useEffect(() => {
     if (!activeTab || !editorRef.current) return;
-    syncModel(editorRef.current, activeTab);
+    const editor = editorRef.current;
+    const previous = previousPathRef.current;
+    if (previous && previous !== activeTab.path) {
+      const model = editor.getModel();
+      if (model && pathOfModel(model) === previous) {
+        const state = editor.saveViewState();
+        if (state) setViewState(previous, state);
+      }
+    }
+    previousPathRef.current = activeTab.path;
+    void syncModel(editor, activeTab);
   }, [activeTab?.path]);
 
   useEffect(() => {
@@ -96,12 +123,17 @@ export function MonacoEditor() {
     // the caret and selections drift unless it re-measures.
     document.fonts.ready.then(() => monaco.editor.remeasureFonts());
     if (activeTab) {
+      previousPathRef.current = activeTab.path;
       syncModel(editor, activeTab);
     }
   };
 
   if (!activeTab) {
     return <div className="empty">No file open</div>;
+  }
+
+  if (activeTab.settings) {
+    return <SettingsView />;
   }
 
   if (activeTab.commit) {
@@ -125,7 +157,7 @@ export function MonacoEditor() {
         // (switching to the diff view, closing the last tab) — models belong
         // to monacoModelRegistry.
         keepCurrentModel
-        options={EDITOR_OPTIONS}
+        options={options}
       />
       {loadError && <div className="empty editor__error">{loadError}</div>}
     </>

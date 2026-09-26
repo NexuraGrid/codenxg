@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { Layout } from "./components/Layout";
 import { useZoom } from "./lib/useZoom";
 import { useMaximizedAttribute } from "./lib/useMaximizedAttribute";
+import { useApplyEditorSettings } from "./lib/useApplyEditorSettings";
 import { setWorkspace } from "./lib/tauri-api";
 import { confirmUnsaved } from "./lib/tabActions";
 import { DialogHost } from "./components/DialogHost";
 import { disposeAllModels } from "./lib/monacoModelRegistry";
 import { pickFolder, rememberWorkspace, restoreLastWorkspace } from "./lib/workspace";
 import { useEditorStore } from "./state/editorStore";
+import { useSettingsStore } from "./state/settingsStore";
 import { useTerminalStore } from "./state/terminalStore";
 import "./App.css";
 
@@ -16,6 +18,11 @@ function App() {
   const [isRestoring, setIsRestoring] = useState(true);
   useZoom();
   useMaximizedAttribute();
+  useApplyEditorSettings();
+
+  useEffect(() => {
+    void useSettingsStore.getState().load();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
