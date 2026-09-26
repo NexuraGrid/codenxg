@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "../state/settingsStore";
 import { useUpdateStore } from "../state/updateStore";
 import { checkForUpdates } from "../lib/updater";
+import { installCli } from "../lib/tauri-api";
 import { BUNDLED_FONTS, type AutoSaveMode } from "../lib/settingsSchema";
 
 const CUSTOM_FONT = "__custom__";
@@ -68,6 +69,35 @@ function UpdatesSection() {
           {label}
         </button>
       </div>
+    </section>
+  );
+}
+
+function CommandLineSection() {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  async function handleInstall() {
+    setBusy(true);
+    try {
+      setStatus(await installCli());
+    } catch (error) {
+      setStatus(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="settings__section">
+      <h3>Command line</h3>
+      <div className="settings__field">
+        <span>Open folders from a terminal with `codenxg .`</span>
+        <button className="dialog__btn is-primary" disabled={busy} onClick={() => void handleInstall()}>
+          Install &apos;codenxg&apos; command
+        </button>
+      </div>
+      {status && <p className="dialog__message">{status}</p>}
     </section>
   );
 }
@@ -254,6 +284,8 @@ export function SettingsView() {
           />
         </label>
       </section>
+
+      <CommandLineSection />
 
       <UpdatesSection />
     </div>

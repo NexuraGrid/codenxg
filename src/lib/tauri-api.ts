@@ -11,6 +11,16 @@ export function setWorkspace(path: string): Promise<void> {
   return invoke("set_workspace", { path });
 }
 
+/** Folder passed on the command line (`codenxg .`), already absolute. */
+export function launchFolder(): Promise<string | null> {
+  return invoke("launch_folder");
+}
+
+/** Puts `codenxg` on the PATH (and the launcher on Linux); resolves to a status message. */
+export function installCli(): Promise<string> {
+  return invoke("install_cli");
+}
+
 /** Changed paths arrive in debounced batches; starts with nothing watched. */
 export function startWatcher(onChange: (paths: string[]) => void): Promise<void> {
   const channel = new Channel<string[]>();

@@ -45,7 +45,7 @@ fn check_inside(root: &Path, path: &Path) -> Result<PathBuf, String> {
 }
 
 /// Resolves `.` and `..` without touching the filesystem.
-fn normalize(path: &Path) -> PathBuf {
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {

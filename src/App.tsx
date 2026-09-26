@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Layout } from "./components/Layout";
 import { useZoom } from "./lib/useZoom";
 import { useMaximizedAttribute } from "./lib/useMaximizedAttribute";
 import { useApplyEditorSettings } from "./lib/useApplyEditorSettings";
-import { setWorkspace } from "./lib/tauri-api";
+import { launchFolder, setWorkspace } from "./lib/tauri-api";
 import { confirmUnsaved } from "./lib/tabActions";
 import { DialogHost } from "./components/DialogHost";
 import { disposeAllModels } from "./lib/monacoModelRegistry";
@@ -13,6 +14,21 @@ import { useSettingsStore } from "./state/settingsStore";
 import { useTerminalStore } from "./state/terminalStore";
 import { checkForUpdates } from "./lib/updater";
 import "./App.css";
+
+// A folder given on the command line wins over the last remembered project.
+async function startupWorkspace(): Promise<string | null> {
+  try {
+    const folder = await launchFolder();
+    if (folder) {
+      await setWorkspace(folder);
+      rememberWorkspace(folder);
+      return folder;
+    }
+  } catch (error) {
+    console.error(error);
+  }
+  return restoreLastWorkspace();
+}
 
 function App() {
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null);
@@ -32,7 +48,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    restoreLastWorkspace()
+    startupWorkspace()
       .then((path) => {
         if (!cancelled && path) setWorkspaceRoot(path);
       })
@@ -46,7 +62,11 @@ function App() {
 
   async function handleOpenFolder() {
     const selected = await pickFolder();
-    if (!selected || selected === workspaceRoot) return;
+    if (selected) await openWorkspace(selected);
+  }
+
+  async function openWorkspace(selected: string) {
+    if (selected === workspaceRoot) return;
 
     if (workspaceRoot) {
       const { tabs } = useEditorStore.getState();
@@ -71,6 +91,19 @@ function App() {
     rememberWorkspace(selected);
     setWorkspaceRoot(selected);
   }
+
+  // The listener outlives renders, so it calls the latest closure.
+  const openWorkspaceRef = useRef(openWorkspace);
+  openWorkspaceRef.current = openWorkspace;
+
+  useEffect(() => {
+    const unlisten = listen<string>("open-folder", (event) => {
+      void openWorkspaceRef.current(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   function renderScreen() {
     // Avoids flashing the welcome screen while the last project is reopened.
