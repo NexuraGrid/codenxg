@@ -1,3 +1,4 @@
+mod appimage;
 mod commands;
 mod state;
 
@@ -24,6 +25,7 @@ use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    appimage::prefer_system_wayland();
     tauri::Builder::default()
         // Must be first: a second `codenxg <folder>` hands its folder to the
         // running window instead of opening another one.
