@@ -566,6 +566,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 
 fn git_command(dir: &Path) -> Command {
     let mut command = Command::new("git");
+    crate::appimage::clean_command(&mut command);
     command
         .current_dir(dir)
         // Never wait on a prompt nobody can see: fail with git's own message

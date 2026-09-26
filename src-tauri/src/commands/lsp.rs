@@ -22,6 +22,8 @@ const SERVERS: &[(&str, &[(&str, &[&str])])] = &[
     ),
     // jdtls also gets `-data <dir>` (see data_dir_args).
     ("java", &[("jdtls", &[])]),
+    // gopls speaks stdio by default and shells out to the `go` command.
+    ("go", &[("gopls", &[])]),
 ];
 
 /// Shown when nothing is installed for a language.
@@ -29,6 +31,7 @@ const INSTALL_HINTS: &[(&str, &str)] = &[
     ("php", "npm install -g intelephense"),
     ("python", "npm install -g pyright"),
     ("java", "brew install jdtls   (needs Java 21+)"),
+    ("go", "brew install gopls   (or: go install golang.org/x/tools/gopls@latest)"),
 ];
 
 // Sent to the webview when the server process ends, so it can stop waiting.
@@ -90,11 +93,12 @@ pub fn lsp_start(
     let (program, full_args) = command_for_binary(&binary, is_shim, &comspec, args);
 
     let mut command = Command::new(&program);
+    crate::appimage::clean_command(&mut command);
     command
         .args(&full_args)
         .args(data_dir_args(name, &root))
         .current_dir(&root)
-        .env("PATH", path_with(Path::new(&binary)))
+        .env("PATH", server_path(&language, &binary))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -201,6 +205,19 @@ fn resolve_binary(name: &str) -> Option<PathBuf> {
     find_in_path(name, &std::env::var("PATH").unwrap_or_default())
         .or_else(|| from_login_shell(name))
         .or_else(|| from_nvm(name))
+        .or_else(|| from_tool_dirs(name))
+}
+
+/// Where developer tools usually land but a GUI launch rarely has on PATH:
+/// `go install` ($GOBIN, $GOPATH/bin, ~/go/bin) and Homebrew.
+fn from_tool_dirs(name: &str) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    dirs.extend(std::env::var_os("GOBIN").map(PathBuf::from));
+    dirs.extend(std::env::var_os("GOPATH").map(|p| PathBuf::from(p).join("bin")));
+    dirs.extend(std::env::var_os("HOME").map(|h| PathBuf::from(h).join("go/bin")));
+    dirs.extend(std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".linuxbrew/bin")));
+    dirs.extend(["/home/linuxbrew/.linuxbrew/bin", "/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+    dirs.into_iter().map(|dir| dir.join(name)).find(|p| is_executable(p))
 }
 
 fn find_in_path(name: &str, path_var: &str) -> Option<PathBuf> {
@@ -209,7 +226,9 @@ fn find_in_path(name: &str, path_var: &str) -> Option<PathBuf> {
 
 fn from_login_shell(name: &str) -> Option<PathBuf> {
     // -i as well as -l: nvm is loaded from .bashrc, which only runs interactively.
-    let output = Command::new("bash")
+    let mut command = Command::new("bash");
+    crate::appimage::clean_command(&mut command);
+    let output = command
         .args(["-lic", &format!("command -v {name}")])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -281,9 +300,28 @@ fn command_for_binary(binary: &str, is_shim: bool, comspec: &str, extra_args: &[
 
 // npm-installed servers start with `#!/usr/bin/env node`: node lives next to
 // them (nvm), so that folder goes first on the child's PATH.
+/// PATH for a server. gopls only works when it can run `go`, which may live
+/// somewhere a GUI launch doesn't see (Homebrew, ~/sdk).
+fn server_path(language: &str, binary: &str) -> std::ffi::OsString {
+    let path = path_with(Path::new(binary));
+    let go_dir = (language == "go" && matches!(host_os(), HostOs::Unix))
+        .then(|| resolve_binary("go"))
+        .flatten()
+        .and_then(|go| go.parent().map(Path::to_path_buf));
+    match go_dir {
+        Some(dir) => {
+            let mut dirs = vec![dir];
+            dirs.extend(std::env::split_paths(&path));
+            std::env::join_paths(dirs).unwrap_or(path)
+        }
+        None => path,
+    }
+}
+
 fn path_with(binary: &Path) -> std::ffi::OsString {
     let mut dirs: Vec<PathBuf> = binary.parent().map(Path::to_path_buf).into_iter().collect();
-    dirs.extend(std::env::split_paths(&std::env::var("PATH").unwrap_or_default()));
+    let path = crate::appimage::without_appdir(std::env::var_os("PATH").unwrap_or_default());
+    dirs.extend(std::env::split_paths(&path));
     std::env::join_paths(dirs).unwrap_or_default()
 }
 

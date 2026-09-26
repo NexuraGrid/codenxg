@@ -63,6 +63,7 @@ pub fn create_terminal(
     let mut cmd = CommandBuilder::new(&resolution.shell.program);
     cmd.args(&resolution.shell.args);
     cmd.cwd(cwd);
+    crate::appimage::clean_pty_command(&mut cmd);
     // Most CLI tools (and the shell's own prompt) probe TERM to decide what
     // they can draw; cmd.exe is the one shell here that doesn't use it.
     if wants_term_env(&resolution.shell.program) {
