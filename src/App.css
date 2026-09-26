@@ -1504,3 +1504,253 @@ body.is-dragging-entry * {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ================= SEARCH ================= */
+.search {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  font-size: 13px;
+}
+
+.search__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search__field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.search__field-spacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.search__reveal-replace {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.search__reveal-replace:hover {
+  color: var(--text);
+}
+
+.search__input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  font: 13px var(--ui);
+  color: var(--text);
+  background: #0e0e0e;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.search__input:focus {
+  border-color: var(--accent);
+}
+
+.search__toggles {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.search__toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.search__toggle:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.search__toggle.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.search__replace-all {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  color: var(--text-dim);
+}
+
+.search__replace-all:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.search__replace-all:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.search__globs {
+  display: flex;
+  gap: 6px;
+}
+
+.search__glob {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  font: 12px var(--ui);
+  color: var(--text-dim);
+  background: #0e0e0e;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.search__glob:focus {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.search__summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.search__refresh {
+  margin-left: auto;
+}
+
+.search__results {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.search__file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 7px 0 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.search__file-header:hover {
+  background: var(--panel-hover);
+}
+
+.search__file-name {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.search__file-folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.search__count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--panel-active);
+  color: var(--text);
+  font-size: 11px;
+  text-align: center;
+}
+
+.search__file-replace {
+  display: none;
+  width: 20px;
+  height: 20px;
+}
+
+.search__file-replace svg {
+  width: 13px;
+  height: 13px;
+}
+
+.search__file-header:hover .search__file-replace {
+  display: grid;
+}
+
+.search__matches {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search__match {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 10px 2px 30px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.search__match:hover {
+  background: var(--panel-hover);
+}
+
+.search__match-line {
+  flex-shrink: 0;
+  min-width: 24px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.search__match-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.search__match-preview mark {
+  color: #ececec;
+  font-weight: 600;
+  background: rgba(59, 130, 246, 0.35);
+  border-radius: 2px;
+}

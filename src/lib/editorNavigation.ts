@@ -48,3 +48,20 @@ export function registerFileOpener(): monaco.IDisposable {
     },
   });
 }
+
+/**
+ * Opens `path` (or focuses its tab if already open) and reveals/selects
+ * `range` — used by project-wide search results to jump to a match in any
+ * file, the same way go-to-definition jumps into one.
+ */
+export function openMatchInFile(path: string, range: monaco.IRange): void {
+  const store = useEditorStore.getState();
+  const active = getActiveEditor();
+
+  if (store.activeTabPath === path && active) {
+    reveal(active, range);
+    return;
+  }
+  pendingReveals.set(path, range);
+  store.addTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path) });
+}

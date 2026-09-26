@@ -6,14 +6,17 @@ import { MonacoEditor } from "./MonacoEditor";
 import { TerminalPanel } from "./TerminalPanel";
 import { TerminalTabs } from "./TerminalTabs";
 import { SourceControl } from "./SourceControl";
+import { SearchPanel } from "./SearchPanel";
 import { useGitStore } from "../state/gitStore";
-import { FilesIcon, FolderOpenIcon, GitIcon, GlobeIcon, PencilIcon, TerminalIcon } from "./icons";
+import { FilesIcon, FolderOpenIcon, GitIcon, GlobeIcon, PencilIcon, SearchIcon, TerminalIcon } from "./icons";
 import { QuickOpen } from "./QuickOpen";
 import { useHotkey } from "../lib/useHotkey";
 import { useFileWatcher } from "../lib/fileWatcher";
 import { connectLanguageServers } from "../lib/lsp/manager";
 import { getActiveEditor } from "../lib/editorInstance";
+import { prefillFromSelection } from "../lib/searchQuery";
 import { usePaletteStore } from "../state/paletteStore";
+import { useSearchStore } from "../state/searchStore";
 import { useTerminalStore } from "../state/terminalStore";
 
 // Ctrl+E / Ctrl+P are shell bindings too (fish: accept suggestion, history);
@@ -21,10 +24,11 @@ import { useTerminalStore } from "../state/terminalStore";
 const outsideTerminal = (event: KeyboardEvent) =>
   !(event.target instanceof Element && event.target.closest(".xterm"));
 
-type SidebarView = "files" | "git" | "web";
+type SidebarView = "files" | "search" | "git" | "web";
 
 const SIDEBAR_VIEWS: { id: SidebarView; title: string; Icon: ComponentType }[] = [
   { id: "files", title: "Files", Icon: FilesIcon },
+  { id: "search", title: "Search", Icon: SearchIcon },
   { id: "git", title: "Source control", Icon: GitIcon },
   { id: "web", title: "Browser", Icon: GlobeIcon },
 ];
@@ -68,6 +72,23 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
   // something else entirely on non-US layouts).
   useHotkey("mod+shift+`", newTerminal, { capture: true, matchCode: "Backquote" });
 
+  // Ctrl+Shift+F: VS Code's project-wide search. Prefills the query from the
+  // editor's current selection, like VS Code does.
+  useHotkey(
+    "mod+shift+f",
+    () => {
+      const editor = getActiveEditor();
+      const model = editor?.getModel();
+      const selection = editor?.getSelection();
+      const selectedText = model && selection ? model.getValueInRange(selection) : "";
+      const prefill = prefillFromSelection(selectedText);
+      if (prefill) useSearchStore.getState().setQuery(prefill);
+      useSearchStore.getState().requestFocus();
+      setSidebarView("search");
+    },
+    { capture: true },
+  );
+
   const openPalette = usePaletteStore((s) => s.open);
   useHotkey("mod+e", () => openPalette(""), { capture: true, when: outsideTerminal });
   useHotkey("mod+p", () => openPalette(""), { capture: true, when: outsideTerminal });
@@ -103,6 +124,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
               </button>
             </nav>
             {sidebarView === "files" && <FileTree rootPath={workspaceRoot} />}
+            {sidebarView === "search" && <SearchPanel root={workspaceRoot} />}
             {sidebarView === "git" && <SourceControl root={workspaceRoot} />}
           </aside>
         </Panel>

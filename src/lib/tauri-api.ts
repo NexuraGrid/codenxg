@@ -67,6 +67,45 @@ export function listFiles(root: string): Promise<FileList> {
   return invoke("list_files", { root });
 }
 
+export interface SearchQueryInput {
+  query: string;
+  matchCase: boolean;
+  wholeWord: boolean;
+  useRegex: boolean;
+  include: string | null;
+  exclude: string | null;
+}
+
+export interface SearchMatch {
+  line: number;
+  startColumn: number;
+  endColumn: number;
+  matchText: string;
+  preview: string;
+  previewMatchStart: number;
+  previewMatchEnd: number;
+}
+
+export interface FileMatches {
+  path: string;
+  matches: SearchMatch[];
+}
+
+export interface SearchResponse {
+  files: FileMatches[];
+  matchCount: number;
+  truncated: boolean;
+}
+
+export function searchInWorkspace(root: string, query: SearchQueryInput): Promise<SearchResponse> {
+  return invoke("search_in_workspace", { root, query });
+}
+
+/** Writes several files at once (project-wide replace), each atomically. */
+export function writeSearchFiles(files: { path: string; content: string }[]): Promise<void> {
+  return invoke("write_search_files", { files });
+}
+
 // Output streams over a dedicated IPC channel instead of global events: no
 // event-bus broadcast or eval per chunk, which is what made the shell feel slow.
 export function createTerminal(
