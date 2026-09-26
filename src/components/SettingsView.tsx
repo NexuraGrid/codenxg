@@ -1,4 +1,8 @@
+import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "../state/settingsStore";
+import { useUpdateStore } from "../state/updateStore";
+import { checkForUpdates } from "../lib/updater";
 import { BUNDLED_FONTS, type AutoSaveMode } from "../lib/settingsSchema";
 
 const CUSTOM_FONT = "__custom__";
@@ -34,6 +38,37 @@ function FontField({ id, label, value, onChange }: FontFieldProps) {
         <input value={value} placeholder="Font family name" spellCheck={false} onChange={(e) => onChange(e.target.value)} />
       )}
     </label>
+  );
+}
+
+function UpdatesSection() {
+  const [version, setVersion] = useState("");
+  const phase = useUpdateStore((s) => s.phase);
+  const progress = useUpdateStore((s) => s.progress);
+
+  useEffect(() => {
+    getVersion().then(setVersion, () => setVersion(""));
+  }, []);
+
+  const label =
+    phase === "checking"
+      ? "Checking…"
+      : phase === "downloading"
+        ? `Downloading${progress === null ? "…" : ` ${Math.round(progress * 100)}%`}`
+        : phase === "installing"
+          ? "Installing…"
+          : "Check for updates";
+
+  return (
+    <section className="settings__section">
+      <h3>Updates</h3>
+      <div className="settings__field">
+        <span>Current version{version ? ` ${version}` : ""}</span>
+        <button className="dialog__btn is-primary" disabled={phase !== "idle"} onClick={() => void checkForUpdates({ silent: false })}>
+          {label}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -219,6 +254,8 @@ export function SettingsView() {
           />
         </label>
       </section>
+
+      <UpdatesSection />
     </div>
   );
 }

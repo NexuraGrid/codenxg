@@ -11,6 +11,7 @@ import { pickFolder, rememberWorkspace, restoreLastWorkspace } from "./lib/works
 import { useEditorStore } from "./state/editorStore";
 import { useSettingsStore } from "./state/settingsStore";
 import { useTerminalStore } from "./state/terminalStore";
+import { checkForUpdates } from "./lib/updater";
 import "./App.css";
 
 function App() {
@@ -22,6 +23,11 @@ function App() {
 
   useEffect(() => {
     void useSettingsStore.getState().load();
+  }, []);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) return;
+    void checkForUpdates({ silent: true });
   }, []);
 
   useEffect(() => {
