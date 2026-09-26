@@ -180,3 +180,53 @@ export function BranchPlusIcon() {
     </svg>
   );
 }
+
+export function StashIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <rect width="18" height="12" x="3" y="8" rx="2" />
+      <path d="M3 8V6a2 2 0 0 1 2-2h3.5l1.5 2h5" />
+    </svg>
+  );
+}
+
+export function StashPlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <rect width="18" height="12" x="3" y="8" rx="2" />
+      <path d="M3 8V6a2 2 0 0 1 2-2h3.5l1.5 2h5" />
+      <path d="M12 12v4" />
+      <path d="M10 14h4" />
+    </svg>
+  );
+}
+
+export function StashApplyIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M12 3v10" />
+      <path d="m8 9 4 4 4-4" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  );
+}
+
+export function StashPopIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M12 13V3" />
+      <path d="m8 7 4-4 4 4" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  );
+}
+
+export function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M3 6h18" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </svg>
+  );
+}

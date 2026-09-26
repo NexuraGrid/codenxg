@@ -1098,6 +1098,14 @@ body.is-dragging-entry * {
   flex: 1;
 }
 
+.scm__section-header--clickable {
+  cursor: pointer;
+}
+
+.scm__section-header--clickable > span:first-of-type {
+  flex: 1;
+}
+
 .scm__count {
   min-width: 18px;
   padding: 0 5px;
@@ -1157,7 +1165,8 @@ body.is-dragging-entry * {
 }
 
 .scm__row:hover .scm__row-actions,
-.scm__section-header:hover .scm__row-actions {
+.scm__section-header:hover .scm__row-actions,
+.history__commit:hover .scm__row-actions {
   display: flex;
 }
 
@@ -1404,6 +1413,7 @@ body.is-dragging-entry * {
 }
 
 .history__text {
+  flex: 1;
   min-width: 0;
 }
 

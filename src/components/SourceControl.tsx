@@ -1,23 +1,31 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useGitStore, decorationOf, type FileDecoration } from "../state/gitStore";
 import { useEditorStore } from "../state/editorStore";
-import type { GitChange } from "../lib/tauri-api";
+import { gitStashFiles, type GitChange, type GitCommitFile, type GitStash } from "../lib/tauri-api";
 import { basename, dirname } from "../lib/paths";
 import { languageFromPath } from "../lib/language";
+import { relativeTime } from "../lib/relativeTime";
 import { FileIcon } from "./FileIcon";
 import { BranchPicker } from "./BranchPicker";
 import { CreateBranchDialog } from "./CreateBranchDialog";
+import { StashDialog } from "./StashDialog";
 import { GitHistory } from "./GitHistory";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
+  ChevronIcon,
   FileIconLine,
   BranchPlusIcon,
   GitIcon,
   MinusIcon,
   PlusIcon,
   RefreshIcon,
+  StashApplyIcon,
+  StashIcon,
+  StashPlusIcon,
+  StashPopIcon,
+  TrashIcon,
   UndoIcon,
 } from "./icons";
 
@@ -34,19 +42,34 @@ function openChange(path: string, showDiff: boolean) {
   useEditorStore.getState().addTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path), showDiff });
 }
 
+function openStashFile(stash: GitStash, file: GitCommitFile) {
+  useEditorStore.getState().addTab({
+    path: `stash:${stash.index}:${file.path}`,
+    title: basename(file.path),
+    isDirty: false,
+    language: languageFromPath(file.path),
+    stash: { index: stash.index, message: stash.message, file: file.path, origFile: file.origPath },
+  });
+}
+
 export function SourceControl({ root }: { root: string }) {
   const status = useGitStore((s) => s.status);
   const busy = useGitStore((s) => s.busy);
   const message = useGitStore((s) => s.message);
-  const { refresh, setMessage, commit, push, pull, init, stage, unstage, discard } = useGitStore.getState();
+  const stashes = useGitStore((s) => s.stashes);
+  const { refresh, setMessage, commit, push, pull, init, stage, unstage, discard, loadStashes, stashPush } =
+    useGitStore.getState();
   const [view, setView] = useState<"changes" | "history">("changes");
   const [isPickingBranch, setIsPickingBranch] = useState(false);
   // null = closed; otherwise the name to prefill.
   const [newBranchName, setNewBranchName] = useState<string | null>(null);
+  const [isStashing, setIsStashing] = useState(false);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    // Cheap and only fetched once per panel mount, not on every status poll.
+    void loadStashes();
+  }, [refresh, loadStashes]);
 
   if (!status) return <div className="scm scm--empty">Loading…</div>;
 
@@ -96,6 +119,17 @@ export function SourceControl({ root }: { root: string }) {
           </span>
         )}
         <span className="scm__spacer" />
+        <button className="icon-btn" title="Stash changes…" onClick={() => setIsStashing(true)} disabled={busy !== null}>
+          <StashIcon />
+        </button>
+        <button
+          className="icon-btn"
+          title="Stash (Include Untracked)"
+          onClick={() => void stashPush(null, true)}
+          disabled={busy !== null}
+        >
+          <StashPlusIcon />
+        </button>
         <button className="icon-btn" title="Create branch…" onClick={() => setNewBranchName("")} disabled={busy !== null}>
           <BranchPlusIcon />
         </button>
@@ -125,6 +159,7 @@ export function SourceControl({ root }: { root: string }) {
         {newBranchName !== null && (
           <CreateBranchDialog initialName={newBranchName} onClose={() => setNewBranchName(null)} />
         )}
+        {isStashing && <StashDialog onClose={() => setIsStashing(false)} />}
       </div>
 
       <div className="scm__views" role="tablist">
@@ -187,6 +222,7 @@ export function SourceControl({ root }: { root: string }) {
               ]}
               emptyText={staged.length === 0 && conflicts.length === 0 ? "No changes. Everything is committed." : undefined}
             />
+            {stashes.length > 0 && <StashesSection stashes={stashes} root={root} />}
           </div>
         </>
       )}
@@ -270,5 +306,85 @@ function Section({ title, changes, root, letter, actions, emptyText }: SectionPr
         })}
       </ul>
     </section>
+  );
+}
+
+function StashesSection({ stashes, root }: { stashes: GitStash[]; root: string }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <section className="scm__section">
+      <header className="scm__section-header scm__section-header--clickable" onClick={() => setCollapsed((c) => !c)}>
+        <ChevronIcon open={!collapsed} />
+        <span>Stashes</span>
+        <span className="scm__count">{stashes.length}</span>
+      </header>
+
+      {!collapsed && (
+        <ul className="scm__list history">
+          {stashes.map((stash) => (
+            <StashRow key={stash.index} stash={stash} root={root} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function StashRow({ stash, root }: { stash: GitStash; root: string }) {
+  const { stashApply, stashPop, stashDrop } = useGitStore.getState();
+  const [files, setFiles] = useState<GitCommitFile[] | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+
+  function toggle() {
+    setIsOpen((open) => !open);
+    if (!files) gitStashFiles(stash.index).then(setFiles).catch(console.error);
+  }
+
+  function act(event: MouseEvent, run: () => Promise<void>) {
+    event.stopPropagation();
+    void run();
+  }
+
+  return (
+    <li>
+      <div className="history__commit" onClick={toggle} title={stash.branch ? `On ${stash.branch}` : undefined}>
+        <ChevronIcon open={isOpen} />
+        <div className="history__text">
+          <div className="history__subject">
+            <span>{stash.message}</span>
+            {stash.branch && <span className="history__ref">{stash.branch}</span>}
+          </div>
+          <div className="history__meta">{relativeTime(stash.timestamp)}</div>
+        </div>
+        <span className="scm__row-actions">
+          <button className="icon-btn" title="Apply Stash" onClick={(e) => act(e, () => stashApply(stash.index))}>
+            <StashApplyIcon />
+          </button>
+          <button className="icon-btn" title="Pop Stash" onClick={(e) => act(e, () => stashPop(stash.index))}>
+            <StashPopIcon />
+          </button>
+          <button className="icon-btn" title="Drop Stash" onClick={(e) => act(e, () => stashDrop(stash.index))}>
+            <TrashIcon />
+          </button>
+        </span>
+      </div>
+      {isOpen && (
+        <ul className="history__files">
+          {!files && <li className="scm__empty-text">Loading…</li>}
+          {files?.length === 0 && <li className="scm__empty-text">No files.</li>}
+          {files?.map((file) => (
+            <li key={file.path} className="scm__row" onClick={() => openStashFile(stash, file)}>
+              <FileIcon name={basename(file.path)} />
+              <span className={`scm__name git-${file.status === "M" || file.status === "T" ? "M" : file.status}`}>
+                {basename(file.path)}
+              </span>
+              <span className="scm__folder">{dirname(file.path).slice(root.length + 1)}</span>
+              <span className={`scm__letter git-${file.status === "T" ? "M" : file.status}`}>{file.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }

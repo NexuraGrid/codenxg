@@ -13,17 +13,23 @@ import {
   gitPush,
   gitShowHead,
   gitStage,
+  gitStashApply,
+  gitStashDrop,
+  gitStashList,
+  gitStashPop,
+  gitStashPush,
   gitStatus,
   gitUnstage,
   type GitBranch,
   type GitChange,
   type GitCommit,
+  type GitStash,
   type GitStatus,
   type SwitchOutcome,
 } from "../lib/tauri-api";
 import { basename, dirname } from "../lib/paths";
 import { showDialog } from "./dialogStore";
-import { explainSwitchBlock } from "../lib/switchExplanation";
+import { explainStashError, explainSwitchBlock } from "../lib/switchExplanation";
 
 /** One letter per file, as VS Code shows it next to the name. */
 export type FileDecoration = "M" | "A" | "D" | "R" | "U" | "C";
@@ -60,6 +66,12 @@ interface GitState {
   push: () => Promise<void>;
   pull: () => Promise<void>;
   init: () => Promise<void>;
+  stashes: GitStash[];
+  loadStashes: () => Promise<void>;
+  stashPush: (message: string | null, includeUntracked: boolean) => Promise<void>;
+  stashApply: (index: number) => Promise<void>;
+  stashPop: (index: number) => Promise<void>;
+  stashDrop: (index: number) => Promise<void>;
   reset: () => void;
 }
 
@@ -94,6 +106,21 @@ export const useGitStore = create<GitState>((set, get) => {
     }
   }
 
+  /** Applies or pops a stash; a conflict gets a plain-words dialog instead of the raw git error. */
+  async function stashAction(kind: "apply" | "pop", action: () => Promise<void>) {
+    set({ busy: kind === "pop" ? "Popping stash…" : "Applying stash…" });
+    try {
+      await action();
+    } catch (error) {
+      const { title, message } = explainStashError(kind, String(error));
+      await showDialog({ title, message, buttons: [{ label: "OK", value: "ok", variant: "primary" }], cancelValue: "ok" });
+    } finally {
+      set({ busy: null });
+      await get().refresh();
+      await get().loadStashes();
+    }
+  }
+
   /** When git refused to switch: explain why and offer to stash and retry. */
   async function followUp(target: string, outcome: SwitchOutcome, created: boolean) {
     if (!outcome.blocked) return;
@@ -114,6 +141,8 @@ export const useGitStore = create<GitState>((set, get) => {
 
     const retry = await runFor(`Switching to ${target}…`, () => gitStashAndSwitch(target));
     if (retry === FAILED) return;
+    // The stash was made regardless of whether the switch itself went through.
+    await get().loadStashes();
     if (retry.blocked) {
       await followUp(target, retry, false);
       return;
@@ -262,9 +291,50 @@ export const useGitStore = create<GitState>((set, get) => {
     pull: async () => void (await run("Pulling…", gitPull)),
     init: async () => void (await run("Initializing…", gitInit)),
 
+    stashes: [],
+    loadStashes: async () => {
+      try {
+        set({ stashes: await gitStashList() });
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    stashPush: async (message, includeUntracked) => {
+      await run(includeUntracked ? "Stashing (including untracked)…" : "Stashing…", () =>
+        gitStashPush(message, includeUntracked),
+      );
+      await get().loadStashes();
+    },
+    stashApply: async (index) => stashAction("apply", () => gitStashApply(index)),
+    stashPop: async (index) => stashAction("pop", () => gitStashPop(index)),
+    stashDrop: async (index) => {
+      const stash = get().stashes.find((s) => s.index === index);
+      const choice = await showDialog({
+        title: `Drop stash "${stash?.message ?? `#${index}`}"?`,
+        message: "This can't be undone.",
+        buttons: [
+          { label: "Drop", value: "drop", variant: "danger" },
+          { label: "Cancel", value: "cancel", variant: "primary" },
+        ],
+        cancelValue: "cancel",
+      });
+      if (choice !== "drop") return;
+      await run("Dropping stash…", () => gitStashDrop(index));
+      await get().loadStashes();
+    },
+
     reset: () => {
       headTexts.clear();
-      set({ status: null, busy: null, byPath: {}, changedDirs: {}, branches: [], history: [], hasMoreHistory: false });
+      set({
+        status: null,
+        busy: null,
+        byPath: {},
+        changedDirs: {},
+        branches: [],
+        history: [],
+        hasMoreHistory: false,
+        stashes: [],
+      });
     },
   };
 });

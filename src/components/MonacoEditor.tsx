@@ -13,6 +13,7 @@ import { attachGitGutter } from "../lib/gitGutter";
 import { applyPendingReveal } from "../lib/editorNavigation";
 import { DiffView } from "./DiffView";
 import { CommitDiffView } from "./CommitDiffView";
+import { StashDiffView } from "./StashDiffView";
 import { EDITOR_OPTIONS } from "../lib/editorOptions";
 
 export function MonacoEditor() {
@@ -105,6 +106,10 @@ export function MonacoEditor() {
 
   if (activeTab.commit) {
     return <CommitDiffView key={activeTab.path} tab={activeTab} />;
+  }
+
+  if (activeTab.stash) {
+    return <StashDiffView key={activeTab.path} tab={activeTab} />;
   }
 
   if (activeTab.showDiff) {

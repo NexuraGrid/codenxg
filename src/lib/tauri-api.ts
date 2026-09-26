@@ -266,6 +266,52 @@ export function gitShowAt(rev: string, path: string): Promise<string | null> {
   return invoke("git_show_at", { rev, path });
 }
 
+export interface GitStash {
+  index: number;
+  /** The message, without its "On <branch>: " / "WIP on <branch>: " prefix. */
+  message: string;
+  /** None when the subject doesn't have the usual shape. */
+  branch: string | null;
+  /** Unix seconds. */
+  timestamp: number;
+}
+
+export function gitStashList(): Promise<GitStash[]> {
+  return invoke("git_stash_list");
+}
+
+/** Stashes every uncommitted change; `includeUntracked` also stashes new files. */
+export function gitStashPush(message: string | null, includeUntracked: boolean): Promise<void> {
+  return invoke("git_stash_push", { message, includeUntracked });
+}
+
+/** Re-applies a stash; the stash itself stays (see `gitStashPop` to drop it too). */
+export function gitStashApply(index: number): Promise<void> {
+  return invoke("git_stash_apply", { index });
+}
+
+export function gitStashPop(index: number): Promise<void> {
+  return invoke("git_stash_pop", { index });
+}
+
+export function gitStashDrop(index: number): Promise<void> {
+  return invoke("git_stash_drop", { index });
+}
+
+export function gitStashFiles(index: number): Promise<GitCommitFile[]> {
+  return invoke("git_stash_files", { index });
+}
+
+export interface StashFileDiff {
+  before: string | null;
+  after: string | null;
+}
+
+/** One file's content before and after a stash, for a read-only diff. */
+export function gitStashFileDiff(index: number, path: string, origPath: string | null): Promise<StashFileDiff> {
+  return invoke("git_stash_file_diff", { index, path, origPath });
+}
+
 /** Starts the language server for `language`; resolves to its name. */
 export function lspStart(language: string, onMessage: (json: string) => void): Promise<string> {
   const channel = new Channel<string>();
