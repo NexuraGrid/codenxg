@@ -1,0 +1,1249 @@
+/* Ported from the approved design reference (diseñoEditor/styles.css).
+   Syntax colors live in src/lib/editorTheme.ts and must stay in sync. */
+:root {
+  --bg: #0a0a0a;
+  --panel: #121212;
+  --panel-hover: #1a1a1a;
+  --panel-active: #222222;
+  --border: #232323;
+
+  --text: #d4d4d4;
+  --text-dim: #7a7a7a;
+  --text-faint: #535353;
+
+  --accent: #3b82f6;
+
+  --ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --mono-out: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+/* The window is transparent (tauri.conf.json) so the app can draw rounded
+   outer corners itself; the visible background lives on .app below. */
+html,
+body,
+#root {
+  background: transparent;
+}
+
+:root {
+  --frame: 3px;
+  /* Concentric with the 6px cards: outer radius = inner radius + frame. */
+  --window-radius: calc(6px + var(--frame));
+}
+
+/* A maximized window touches the screen edges; rounded corners would leave gaps. */
+:root[data-maximized] {
+  --window-radius: 0px;
+}
+
+body {
+  color: var(--text);
+  font-family: var(--ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ================= WELCOME ================= */
+.welcome-screen {
+  height: 100vh;
+  background: var(--bg);
+  border-radius: var(--window-radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.welcome-screen h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #ececec;
+}
+
+.welcome-screen button {
+  padding: 8px 16px;
+  font-size: 13.5px;
+  color: #ececec;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.welcome-screen button:hover {
+  background: var(--panel-active);
+}
+
+/* ================= LAYOUT ================= */
+.app {
+  position: relative;
+  height: 100vh;
+  padding: var(--frame);
+  background: var(--bg);
+  border-radius: var(--window-radius);
+  overflow: hidden;
+}
+
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* The 8px gap between cards doubles as the resize handle. */
+.panel-gap {
+  width: 8px;
+  position: relative;
+}
+
+.panel-gap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3.5px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.panel-gap:hover::after,
+.panel-gap[data-resize-handle-active]::after {
+  background: var(--accent);
+}
+
+/* ================= SIDEBAR ================= */
+.sidebar__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--border);
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.8;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+}
+
+.icon-btn.is-active {
+  background: var(--panel-active);
+  color: #e8e8e8;
+}
+
+.sidebar__open-folder {
+  margin-left: auto;
+}
+
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.file-tree > li {
+  min-width: max-content;
+}
+
+/* Native scrollbars styled to match Monaco's: thin pill, accent while held. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2e2e2ecc;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #454545;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: #3b82f6b3;
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  color: #e4e4e4;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.file:hover {
+  background: var(--panel-hover);
+}
+
+.file.is-active {
+  background: var(--panel-active);
+}
+
+.chevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  stroke-width: 2.2;
+  transition: transform 0.15s;
+}
+
+.chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.chevron-spacer {
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.file-ico {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* ================= EDITOR ================= */
+.tabs {
+  display: flex;
+  align-items: stretch;
+  height: 38px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs__list {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs__list::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs__drag {
+  flex: 1;
+  min-width: 24px;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 7px;
+}
+
+.window-controls .icon-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.window-controls .icon-btn.is-close:hover {
+  background: #e5484d;
+  color: #fff;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px 0 15px;
+  font-size: 13.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab .file-ico {
+  opacity: 0.55;
+}
+
+.tab.is-active {
+  background: #191919;
+  color: #ececec;
+}
+
+.tab.is-active .file-ico {
+  opacity: 1;
+}
+
+.tab__dirty {
+  font-size: 8px;
+  color: #ececec;
+}
+
+.tab__close {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border-radius: 3px;
+  color: var(--text-dim);
+  visibility: hidden;
+}
+
+.tab__close svg {
+  width: 11px;
+  height: 11px;
+}
+
+.tab.is-active .tab__close,
+.tab:hover .tab__close {
+  visibility: visible;
+}
+
+.tab__close:hover {
+  background: #2a2a2a;
+  color: var(--text);
+}
+
+.editor__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* WebKitGTK does not always treat a flex item's height as definite, so the
+   editor's height: 100% could resolve to 0 — pin it to the body instead. */
+.editor__body > section {
+  position: absolute !important;
+  inset: 0;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.editor__error {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0 32px;
+  text-align: center;
+  background: var(--panel);
+}
+
+/* Monaco draws its own scrollbars; colors come from the theme, shape from here:
+   a thin rounded pill centered in the track. */
+.editor__body .monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 999px;
+}
+
+.editor__body .monaco-scrollable-element > .scrollbar.vertical > .slider {
+  left: 2px !important;
+}
+
+.editor__body .monaco-scrollable-element > .scrollbar.horizontal > .slider {
+  top: 2px !important;
+}
+
+/* Monaco right-aligns line numbers at editor font size; the design uses
+   small, left-aligned numbers. */
+.editor__body .monaco-editor .line-numbers {
+  text-align: left !important;
+  padding-left: 12px;
+  font-size: 12px;
+}
+
+/* ================= OUTPUT ================= */
+.output__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.term-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+.term-tabs__list {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.term-tabs__list::-webkit-scrollbar {
+  display: none;
+}
+
+.term-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.term-tab.is-active {
+  background: #191919;
+  color: #ececec;
+}
+
+.term-tab__icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.term-tab.is-active .tab__close,
+.term-tab:hover .tab__close {
+  visibility: visible;
+}
+
+.output__empty {
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.output__empty:hover {
+  color: var(--text);
+}
+
+.kbd {
+  padding: 1px 5px;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: #8a8a8a;
+  background: #1d1d1d;
+  border: 1px solid #2e2e2e;
+  border-radius: 4px;
+}
+
+.output__body {
+  flex: 1;
+  min-height: 0;
+  padding: 15px 40px 15px 15px;
+}
+
+.terminal-panel {
+  height: 100%;
+}
+
+.terminal-panel.is-hidden {
+  display: none;
+}
+
+.output__body .xterm-viewport {
+  scrollbar-width: none;
+}
+
+.output__body .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.output__track {
+  position: absolute;
+  top: 52px;
+  right: 12px;
+  bottom: 0;
+  width: 9px;
+  background: #161616;
+  pointer-events: none;
+}
+
+/* Positioned against .app so it survives collapsing the output panel; the
+   offsets reproduce the design's "45.5% of the output card, 7px inside it"
+   (frame + 1px card border + 7px). */
+.float-tools {
+  position: absolute;
+  top: calc(var(--frame) + (100% - 2 * var(--frame)) * 0.455);
+  right: calc(var(--frame) + 8px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2;
+}
+
+.tool-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  color: #bdbdbd;
+  background: #181818;
+  border: 1px solid #2f2f2f;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  transition: background 0.15s, color 0.15s;
+}
+
+.tool-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.8;
+}
+
+.tool-btn:hover {
+  color: #fff;
+}
+
+.tool-btn.is-active {
+  background: #2b2b2b;
+  color: #f0f0f0;
+}
+
+/* ================= CONTEXT MENU ================= */
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 196px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  animation: menu-in 0.08s ease-out;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: #e4e4e4;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.context-menu__item:hover:not(:disabled),
+.context-menu__item:focus-visible {
+  background: var(--panel-active);
+  outline: none;
+}
+
+.context-menu__item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.context-menu__shortcut {
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.context-menu__separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* ================= EXPLORER: DRAG AND DROP ================= */
+.file-tree.is-drop-target,
+.file-tree li.is-drop-target {
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.45);
+}
+
+.file.is-drag-source {
+  opacity: 0.45;
+}
+
+body.is-dragging-entry,
+body.is-dragging-entry * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+/* The ghost ignores the pointer so elementFromPoint sees what's under it. */
+.drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 10px 4px 8px;
+  font-size: 13px;
+  color: #ececec;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--panel-active);
+  border: 1px solid #2e2e2e;
+  border-radius: 5px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* ================= EXPLORER: INLINE CREATE ================= */
+.file.is-editing {
+  cursor: default;
+  background: var(--panel-hover);
+}
+
+.file.is-editing:hover {
+  background: var(--panel-hover);
+}
+
+.file-create__input {
+  flex: 1;
+  min-width: 80px;
+  height: 22px;
+  padding: 0 6px;
+  font: inherit;
+  color: #ececec;
+  background: #0e0e0e;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  outline: none;
+}
+
+.file-create__input.has-error {
+  border-color: #e5484d;
+}
+
+.file-create__error {
+  padding-top: 4px;
+  padding-bottom: 6px;
+  padding-right: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #ff9592;
+  white-space: normal;
+  background: var(--panel-hover);
+}
+
+/* ================= DIALOG ================= */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  animation: fade-in 0.12s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.dialog {
+  width: min(440px, 100%);
+  padding: 20px 20px 16px;
+  background: var(--panel);
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  animation: dialog-in 0.14s ease-out;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+.dialog__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #ececec;
+  overflow-wrap: anywhere;
+}
+
+.dialog__message {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.dialog__btn {
+  height: 30px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: #e4e4e4;
+  background: #1d1d1d;
+  border: 1px solid #2e2e2e;
+  border-radius: 5px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.dialog__btn:hover {
+  background: #262626;
+}
+
+.dialog__btn.is-primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.dialog__btn.is-primary:hover {
+  background: #2f74e6;
+}
+
+.dialog__btn.is-danger {
+  color: #fff;
+  background: #c93a3f;
+  border-color: #c93a3f;
+}
+
+.dialog__btn.is-danger:hover {
+  background: #e5484d;
+}
+
+.dialog__btn:focus-visible {
+  outline: 2px solid #6aa8ff;
+  outline-offset: 2px;
+}
+
+/* ================= QUICK OPEN ================= */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 56px 24px 24px;
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 100%);
+  max-height: min(460px, calc(100vh - 80px));
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  animation: menu-in 0.1s ease-out;
+}
+
+.palette__input {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 10px;
+  font: 13.5px var(--ui);
+  color: #ececec;
+  background: #0e0e0e;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+}
+
+.palette__input::placeholder {
+  color: var(--text-faint);
+}
+
+.palette__list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  overflow-y: auto;
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  white-space: nowrap;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.palette__item.is-selected {
+  background: var(--panel-active);
+}
+
+.palette__name {
+  flex-shrink: 0;
+  color: #ececec;
+}
+
+.palette__dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.palette__item mark {
+  color: #6aa8ff;
+  font-weight: 600;
+  background: none;
+}
+
+.palette__hint,
+.palette__footer {
+  padding: 10px 10px 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.palette__footer {
+  flex-shrink: 0;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+}
+
+/* ================= GIT ================= */
+:root {
+  --git-modified: #e5bf6b;
+  --git-added: #8ccf9c;
+  --git-deleted: #e06c75;
+  --git-renamed: #7fa6f3;
+  --git-conflict: #d27ed3;
+}
+
+.git-M,
+.git-dir {
+  color: var(--git-modified);
+}
+.git-A,
+.git-U {
+  color: var(--git-added);
+}
+.git-D {
+  color: var(--git-deleted);
+}
+.git-R {
+  color: var(--git-renamed);
+}
+.git-C {
+  color: var(--git-conflict);
+}
+
+.file__git {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.icon-btn {
+  position: relative;
+}
+
+.badge {
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+.scm {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  font-size: 13px;
+}
+
+.scm--empty {
+  gap: 12px;
+  padding: 16px 14px;
+  color: var(--text-dim);
+}
+
+.scm--empty p {
+  margin: 0;
+}
+
+.scm__branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0 7px 0 12px;
+  color: var(--text);
+}
+
+.scm__branch > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  stroke-width: 1.8;
+}
+
+.scm__branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scm__sync-count {
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.scm__spacer {
+  flex: 1;
+}
+
+.scm__commit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 4px 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.scm__message {
+  resize: vertical;
+  min-height: 56px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #0e0e0e;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 13px;
+  outline: none;
+}
+
+.scm__message:focus {
+  border-color: var(--accent);
+}
+
+.scm__primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.scm__primary svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+
+.scm__primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.scm__lists {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 8px;
+}
+
+.scm__section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 7px 0 12px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scm__section-header > span:first-child {
+  flex: 1;
+}
+
+.scm__count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--panel-active);
+  color: var(--text);
+  font-size: 11px;
+  text-align: center;
+}
+
+.scm__empty-text {
+  margin: 4px 12px;
+  color: var(--text-faint);
+}
+
+.scm__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scm__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scm__row:hover {
+  background: var(--panel-hover);
+}
+
+.scm__name {
+  flex-shrink: 0;
+}
+
+.scm__name.is-deleted {
+  text-decoration: line-through;
+}
+
+.scm__folder {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.scm__row-actions {
+  display: none;
+  gap: 1px;
+}
+
+.scm__row:hover .scm__row-actions,
+.scm__section-header:hover .scm__row-actions {
+  display: flex;
+}
+
+.scm__row-actions .icon-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.scm__row-actions .icon-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.scm__letter {
+  width: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Gutter bars next to the line numbers (gitGutter.ts). */
+.git-gutter {
+  margin-left: 3px;
+}
+
+.git-gutter--added {
+  border-left: 3px solid var(--git-added);
+}
+
+.git-gutter--modified {
+  border-left: 3px solid var(--git-modified);
+}
+
+/* A removal has no line of its own: a small wedge at the top of the next one. */
+.git-gutter--deleted::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--git-deleted);
+}
+
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.diff-view__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.diff-view__title {
+  color: var(--text);
+}
+
+.diff-view__hint {
+  flex: 1;
+  color: var(--text-faint);
+}
+
+.diff-view__open {
+  padding: 3px 9px;
+  border-radius: 4px;
+  color: var(--text-dim);
+}
+
+.diff-view__open:hover {
+  background: var(--panel-active);
+  color: var(--text);
+}
+
+.diff-view__notice {
+  padding: 6px 12px;
+  color: var(--git-deleted);
+  font-size: 12.5px;
+}
+
+.diff-view__body {
+  flex: 1;
+  min-height: 0;
+}

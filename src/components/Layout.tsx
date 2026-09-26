@@ -1,0 +1,171 @@
+import { useEffect, useRef, useState, type ComponentType } from "react";
+import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
+import { FileTree } from "./FileTree";
+import { EditorTabs } from "./EditorTabs";
+import { MonacoEditor } from "./MonacoEditor";
+import { TerminalPanel } from "./TerminalPanel";
+import { TerminalTabs } from "./TerminalTabs";
+import { SourceControl } from "./SourceControl";
+import { useGitStore } from "../state/gitStore";
+import { FilesIcon, FolderOpenIcon, GitIcon, GlobeIcon, PencilIcon, TerminalIcon } from "./icons";
+import { QuickOpen } from "./QuickOpen";
+import { useHotkey } from "../lib/useHotkey";
+import { useFileWatcher } from "../lib/fileWatcher";
+import { getActiveEditor } from "../lib/editorInstance";
+import { usePaletteStore } from "../state/paletteStore";
+import { useTerminalStore } from "../state/terminalStore";
+
+// Ctrl+E / Ctrl+P are shell bindings too (fish: accept suggestion, history);
+// leave them to the terminal while it has focus.
+const outsideTerminal = (event: KeyboardEvent) =>
+  !(event.target instanceof Element && event.target.closest(".xterm"));
+
+type SidebarView = "files" | "git" | "web";
+
+const SIDEBAR_VIEWS: { id: SidebarView; title: string; Icon: ComponentType }[] = [
+  { id: "files", title: "Files", Icon: FilesIcon },
+  { id: "git", title: "Source control", Icon: GitIcon },
+  { id: "web", title: "Browser", Icon: GlobeIcon },
+];
+
+interface LayoutProps {
+  workspaceRoot: string;
+  onOpenFolder: () => void;
+}
+
+export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
+  const projectName = workspaceRoot.split(/[\\/]/).filter(Boolean).pop() ?? workspaceRoot;
+  const terminalPanelRef = useRef<ImperativePanelHandle>(null);
+  const [sidebarView, setSidebarView] = useState<SidebarView>("files");
+  const [isOutputOpen, setIsOutputOpen] = useState(true);
+
+  function toggleOutput() {
+    const panel = terminalPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  }
+
+  useHotkey("mod+b", toggleOutput);
+  useFileWatcher(workspaceRoot);
+
+  const changeCount = useGitStore((s) => s.status?.changes.length ?? 0);
+  const terminalSessions = useTerminalStore((s) => s.sessions);
+  const activeTerminalId = useTerminalStore((s) => s.activeSessionId);
+  useEffect(() => useTerminalStore.getState().ensureSession(), []);
+
+  function newTerminal() {
+    terminalPanelRef.current?.expand();
+    useTerminalStore.getState().createSession();
+  }
+  // VS Code's shortcut. `code` rather than `key`: Shift turns ` into ~ (or
+  // something else entirely on non-US layouts).
+  useHotkey("mod+shift+`", newTerminal, { capture: true, matchCode: "Backquote" });
+
+  const openPalette = usePaletteStore((s) => s.open);
+  useHotkey("mod+e", () => openPalette(""), { capture: true, when: outsideTerminal });
+  useHotkey("mod+p", () => openPalette(""), { capture: true, when: outsideTerminal });
+  // Captured ahead of Monaco's own Ctrl+G so both paths share one palette.
+  useHotkey("mod+g", () => openPalette(":"), {
+    capture: true,
+    when: (event) => outsideTerminal(event) && Boolean(getActiveEditor()?.getModel()),
+  });
+
+  return (
+    <main className="app" data-tauri-drag-region>
+      <PanelGroup direction="horizontal" autoSaveId="code-editor-design-layout">
+        <Panel defaultSize={11} minSize={8} maxSize={25}>
+          <aside className="panel sidebar">
+            <nav className="sidebar__toolbar" aria-label="Views" data-tauri-drag-region>
+              {SIDEBAR_VIEWS.map(({ id, title, Icon }) => (
+                <button
+                  key={id}
+                  className={`icon-btn${sidebarView === id ? " is-active" : ""}`}
+                  title={title}
+                  onClick={() => setSidebarView(id)}
+                >
+                  <Icon />
+                  {id === "git" && changeCount > 0 && <span className="badge">{changeCount}</span>}
+                </button>
+              ))}
+              <button
+                className="icon-btn sidebar__open-folder"
+                title={`Open Folder… (current: ${projectName})`}
+                onClick={onOpenFolder}
+              >
+                <FolderOpenIcon />
+              </button>
+            </nav>
+            {sidebarView === "files" && <FileTree rootPath={workspaceRoot} />}
+            {sidebarView === "git" && <SourceControl root={workspaceRoot} />}
+          </aside>
+        </Panel>
+
+        <PanelResizeHandle className="panel-gap" />
+
+        <Panel defaultSize={53} minSize={30}>
+          <section className="panel editor">
+            <EditorTabs />
+            <div className="editor__body">
+              <MonacoEditor />
+            </div>
+          </section>
+        </Panel>
+
+        <PanelResizeHandle className="panel-gap" />
+
+        <Panel
+          ref={terminalPanelRef}
+          defaultSize={36}
+          minSize={20}
+          collapsible
+          collapsedSize={0}
+          onResize={(size) => setIsOutputOpen(size > 0)}
+        >
+          <section className="panel output">
+            <header className="output__header" data-tauri-drag-region>
+              <TerminalTabs />
+              <kbd className="kbd">⌘B</kbd>
+            </header>
+
+            <div className="output__body">
+              {terminalSessions.map((session) => (
+                <TerminalPanel
+                  key={session.id}
+                  sessionId={session.id}
+                  cwd={workspaceRoot}
+                  isActive={session.id === activeTerminalId}
+                />
+              ))}
+              {terminalSessions.length === 0 && (
+                <button className="output__empty" onClick={newTerminal}>
+                  No terminal open — click to start one
+                </button>
+              )}
+            </div>
+            <div className="output__track" aria-hidden="true" />
+          </section>
+        </Panel>
+      </PanelGroup>
+
+      <QuickOpen root={workspaceRoot} />
+
+      {/* Lives outside the collapsible panel so it can reopen it. */}
+      <div className="float-tools">
+        <button
+          className={`tool-btn${isOutputOpen ? " is-active" : ""}`}
+          title={isOutputOpen ? "Hide output (Ctrl+B)" : "Show output (Ctrl+B)"}
+          onClick={toggleOutput}
+        >
+          <TerminalIcon />
+        </button>
+        <button className="tool-btn" title="Edit">
+          <PencilIcon />
+        </button>
+      </div>
+    </main>
+  );
+}
