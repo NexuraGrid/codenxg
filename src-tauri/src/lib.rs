@@ -51,6 +51,7 @@ pub fn run() {
             set_workspace,
             launch_folder,
             install_cli,
+            appimage::updates_supported,
             watch_start,
             watch_dirs,
             git_status,

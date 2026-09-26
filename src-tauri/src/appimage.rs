@@ -25,6 +25,13 @@ fn preload_value(lib: &Path, existing: Option<OsString>) -> OsString {
 
 /// No-op outside an AppImage, when already re-executed, or when the system
 /// has no libwayland to prefer.
+/// Whether the in-app updater can replace this install. On Linux only the
+/// AppImage can: packages (pacman, deb, rpm) belong to the package manager.
+#[tauri::command]
+pub fn updates_supported() -> bool {
+    !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some()
+}
+
 // Set by the AppImage runtime or by `prefer_system_wayland`: meaningless to
 // (or harmful for) anything the editor launches.
 const OWN_VARS: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0", "OWD", GUARD];

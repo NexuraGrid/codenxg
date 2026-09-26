@@ -1,0 +1,51 @@
+# Maintainer: MauricioJC3 <a.mauriciojc03@gmail.com>
+pkgname=codenxg
+pkgver=0.1.3
+pkgrel=1
+pkgdesc='Code editor built with Tauri'
+arch=('x86_64')
+# makepkg's default -flto breaks the C objects of `ring` at Rust's link step.
+options=('!lto')
+url='https://github.com/NexuraGrid/codenxg'
+# The repository does not declare a license yet.
+license=('custom')
+depends=('webkit2gtk-4.1' 'gtk3' 'git')
+makedepends=('rust' 'nodejs' 'npm')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('3674693fa796c2ca32f61d525dd6e97c233faa04cef628df63f6a554a1cff217')
+
+build() {
+  cd "$pkgname-$pkgver"
+  # The git tag is the source of truth for the version, as in the release workflow.
+  node -e "
+    const fs = require('fs');
+    const p = 'src-tauri/tauri.conf.json';
+    const c = JSON.parse(fs.readFileSync(p, 'utf8'));
+    c.version = '$pkgver';
+    fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
+  "
+  npm ci
+  # --no-bundle: pacman installs the binary itself, no AppImage/deb/rpm.
+  npx tauri build --no-bundle
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 src-tauri/target/release/tauri-app "$pkgdir/usr/lib/$pkgname/$pkgname"
+  # `codenxg .` should return the prompt: detach the app from the terminal.
+  install -Dm755 /dev/stdin "$pkgdir/usr/bin/$pkgname" <<'SCRIPT'
+#!/bin/sh
+exec setsid -f /usr/lib/codenxg/codenxg "$@" >/dev/null 2>&1 </dev/null
+SCRIPT
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/$pkgname.png"
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/$pkgname.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=CodeNXG
+Comment=Code editor
+Exec=/usr/lib/codenxg/codenxg
+Icon=codenxg
+Categories=Development;TextEditor;
+Terminal=false
+DESKTOP
+}

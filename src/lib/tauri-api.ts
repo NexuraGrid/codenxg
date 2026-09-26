@@ -21,6 +21,11 @@ export function installCli(): Promise<string> {
   return invoke("install_cli");
 }
 
+/** False for installs the package manager owns (Linux packages), where the in-app updater can't apply an update. */
+export function updatesSupported(): Promise<boolean> {
+  return invoke("updates_supported");
+}
+
 /** Changed paths arrive in debounced batches; starts with nothing watched. */
 export function startWatcher(onChange: (paths: string[]) => void): Promise<void> {
   const channel = new Channel<string[]>();

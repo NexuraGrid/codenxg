@@ -1,5 +1,6 @@
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { updatesSupported } from "./tauri-api";
 import { showDialog } from "../state/dialogStore";
 import { useUpdateStore } from "../state/updateStore";
 
@@ -30,6 +31,11 @@ async function notify(title: string, message: string) {
 export async function checkForUpdates({ silent }: CheckOptions): Promise<void> {
   const store = useUpdateStore.getState();
   if (store.phase !== "idle") return;
+
+  if (!(await updatesSupported().catch(() => false))) {
+    if (!silent) await notify("Updates", "This install is managed by your package manager. Update it there.");
+    return;
+  }
 
   store.setPhase("checking");
   try {
