@@ -10,6 +10,7 @@ import { setActiveEditor } from "../lib/editorInstance";
 import { installEditorClipboard } from "../lib/editorClipboard";
 import { EDITOR_THEME_ID } from "../lib/editorTheme";
 import { attachGitGutter } from "../lib/gitGutter";
+import { applyPendingReveal } from "../lib/editorNavigation";
 import { DiffView } from "./DiffView";
 import { CommitDiffView } from "./CommitDiffView";
 import { EDITOR_OPTIONS } from "../lib/editorOptions";
@@ -45,7 +46,10 @@ export function MonacoEditor() {
       }
     }
 
-    if (requestedPathRef.current === tab.path) editor.setModel(model);
+    if (requestedPathRef.current === tab.path) {
+      editor.setModel(model);
+      applyPendingReveal(editor, tab.path);
+    }
   }
 
   // Swap the model on the existing editor instance instead of recreating it

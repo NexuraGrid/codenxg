@@ -32,16 +32,24 @@ export function pathOfModel(model: monaco.editor.ITextModel): string | undefined
 }
 
 export function createModel(path: string, content: string, language: string): monaco.editor.ITextModel {
-  const model = monaco.editor.createModel(content, language);
+  const model = newModel(path, content, language);
   const entry: ModelEntry = { model, path, savedVersionId: model.getAlternativeVersionId(), diskText: content };
   entries.set(path, entry);
+  trackDirty(entry);
+  return model;
+}
 
+// A file:// URI tells language servers (and the TS worker) which file this is.
+function newModel(path: string, content: string, language: string): monaco.editor.ITextModel {
+  return monaco.editor.createModel(content, language, monaco.Uri.file(path));
+}
+
+function trackDirty(entry: ModelEntry): void {
+  const { model } = entry;
   model.onDidChangeContent(() => {
     const dirty = model.getAlternativeVersionId() !== entry.savedVersionId;
     useEditorStore.getState().setDirty(entry.path, dirty);
   });
-
-  return model;
 }
 
 export function markSaved(path: string, diskText: string): void {
@@ -106,19 +114,24 @@ function replaceContent(entry: ModelEntry, text: string): void {
 }
 
 /**
- * Re-keys every model at or under `from` after a rename. Models keep their
- * content, unsaved edits and undo history; the language follows a changed
- * extension (notes.txt -> notes.go).
+ * Moves every model at or under `from` to its new path after a rename. A
+ * model's URI can't change, so each is recreated under the new one (language
+ * servers must see the new file, and the old URI must be free for a new file
+ * of that name). Content and unsaved edits carry over; undo history doesn't.
  */
 export function rebaseModels(from: string, to: string): void {
   const moved = [...entries.values()].filter((e) => isSameOrInside(e.path, from));
   for (const entry of moved) {
+    const wasDirty = isDirty(entry);
+    const old = entry.model;
     entries.delete(entry.path);
-    entry.path = rebase(entry.path, from, to);
-    entries.set(entry.path, entry);
 
-    const language = languageFromPath(entry.path);
-    if (entry.model.getLanguageId() !== language) monaco.editor.setModelLanguage(entry.model, language);
+    entry.path = rebase(entry.path, from, to);
+    entry.model = newModel(entry.path, old.getValue(), languageFromPath(entry.path));
+    entry.savedVersionId = wasDirty ? -1 : entry.model.getAlternativeVersionId();
+    entries.set(entry.path, entry);
+    trackDirty(entry);
+    old.dispose();
   }
 }
 

@@ -8,6 +8,7 @@ import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 import { registerSemanticHighlighting } from "./semanticHighlight";
 import { applyEditorTheme, registerGoTokenizer } from "./editorTheme";
+import { registerFileOpener } from "./editorNavigation";
 
 // Without this, @monaco-editor/react downloads its own Monaco from a CDN.
 // monacoModelRegistry creates models with the bundled npm instance, and an
@@ -30,6 +31,7 @@ loader.config({ monaco });
 applyEditorTheme(monaco);
 registerGoTokenizer(monaco);
 registerSemanticHighlighting(monaco);
+registerFileOpener();
 
 // VS Code's Emmet: "!" + Tab for an HTML5 skeleton, "ul>li*3", "m10" in CSS.
 // PHP files are HTML at the top level, like in VS Code.

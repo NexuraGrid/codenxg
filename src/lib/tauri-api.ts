@@ -226,3 +226,18 @@ export function gitCommitFiles(hash: string): Promise<GitCommitFile[]> {
 export function gitShowAt(rev: string, path: string): Promise<string | null> {
   return invoke("git_show_at", { rev, path });
 }
+
+/** Starts the language server for `language`; resolves to its name. */
+export function lspStart(language: string, onMessage: (json: string) => void): Promise<string> {
+  const channel = new Channel<string>();
+  channel.onmessage = onMessage;
+  return invoke("lsp_start", { language, onMessage: channel });
+}
+
+export function lspSend(language: string, message: string): Promise<void> {
+  return invoke("lsp_send", { language, message });
+}
+
+export function lspStop(language: string): Promise<void> {
+  return invoke("lsp_stop", { language });
+}

@@ -11,6 +11,7 @@ import { FilesIcon, FolderOpenIcon, GitIcon, GlobeIcon, PencilIcon, TerminalIcon
 import { QuickOpen } from "./QuickOpen";
 import { useHotkey } from "../lib/useHotkey";
 import { useFileWatcher } from "../lib/fileWatcher";
+import { connectLanguageServers } from "../lib/lsp/manager";
 import { getActiveEditor } from "../lib/editorInstance";
 import { usePaletteStore } from "../state/paletteStore";
 import { useTerminalStore } from "../state/terminalStore";
@@ -51,6 +52,8 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
 
   useHotkey("mod+b", toggleOutput);
   useFileWatcher(workspaceRoot);
+  // PHP, Python and Java servers start on demand and stop with the project.
+  useEffect(() => connectLanguageServers(workspaceRoot), [workspaceRoot]);
 
   const changeCount = useGitStore((s) => s.status?.changes.length ?? 0);
   const terminalSessions = useTerminalStore((s) => s.sessions);
