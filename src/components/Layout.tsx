@@ -92,7 +92,9 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
       .onCloseRequested(async () => {
-        await flushWorkspaceTabsNow(workspaceRoot);
+        // Tauri only destroys the window once this resolves: a failed save
+        // must never leave the window impossible to close.
+        await flushWorkspaceTabsNow(workspaceRoot).catch(console.error);
       })
       .then((stop) => {
         if (cancelled) stop();
