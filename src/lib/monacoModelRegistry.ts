@@ -2,6 +2,7 @@ import * as monaco from "monaco-editor";
 import { useEditorStore } from "../state/editorStore";
 import { isSameOrInside, rebase } from "./paths";
 import { languageFromPath } from "./language";
+import { releaseIdleLanguageWorkers } from "./languageWorkers";
 
 interface ModelEntry {
   model: monaco.editor.ITextModel;
@@ -122,7 +123,9 @@ export function rebaseModels(from: string, to: string): void {
 }
 
 export function disposeAllModels(): void {
-  for (const path of [...entries.keys()]) disposeModel(path);
+  for (const entry of entries.values()) entry.model.dispose();
+  entries.clear();
+  releaseIdleLanguageWorkers();
 }
 
 export function disposeModel(path: string): void {
@@ -130,5 +133,6 @@ export function disposeModel(path: string): void {
   if (entry) {
     entry.model.dispose();
     entries.delete(path);
+    releaseIdleLanguageWorkers();
   }
 }

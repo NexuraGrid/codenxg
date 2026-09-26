@@ -55,7 +55,23 @@ pub fn read_dir(state: State<'_, WorkspaceState>, path: String) -> Result<Vec<Fi
 #[tauri::command(async)]
 pub fn read_file(state: State<'_, WorkspaceState>, path: String) -> Result<String, String> {
     let path = ensure_in_workspace(&state, &path)?;
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    read_text(&path, MAX_OPEN_BYTES)
+}
+
+// Monaco keeps the whole text (plus tokens) in memory and freezes on huge
+// files; a multi-GB log would also stall the IPC bridge.
+const MAX_OPEN_BYTES: u64 = 16 * 1024 * 1024;
+
+fn read_text(path: &Path, max_bytes: u64) -> Result<String, String> {
+    let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
+    if size > max_bytes {
+        return Err(format!(
+            "the file is {:.1} MB; files over {} MB are not opened",
+            size as f64 / 1_048_576.0,
+            max_bytes / 1_048_576
+        ));
+    }
+    std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -273,42 +289,57 @@ pub struct FileList {
     pub truncated: bool,
 }
 
-/// Every file under `root` (for quick open), skipping heavy generated folders.
+/// Every file under `root` for quick open: honours .gitignore (also outside
+/// git repos) and skips heavy generated folders. Walks folders in parallel,
+/// which matters on /mnt/c where every read crosses WSL's 9P bridge.
 #[tauri::command(async)]
 pub fn list_files(state: State<'_, WorkspaceState>, root: String) -> Result<FileList, String> {
     let root = ensure_in_workspace(&state, &root)?;
-    let mut files = Vec::new();
-    let mut pending = vec![root];
+    Ok(walk_files(&root, MAX_LISTED_FILES))
+}
 
-    while let Some(dir) = pending.pop() {
-        // Unreadable subfolders (permissions, broken links) are skipped, not fatal.
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for entry in entries.flatten() {
-            let file_name = entry.file_name();
-            let lossy = file_name.to_string_lossy();
-            let name: &str = &lossy;
-            if SKIP_ENTRIES.contains(&name) || SKIP_WHEN_LISTING.contains(&name) {
-                continue;
-            }
-            let Ok(file_type) = entry.file_type() else { continue };
-            // file_type() doesn't follow symlinks, so symlinked folders can't loop.
-            if file_type.is_dir() {
-                pending.push(entry.path());
-            } else {
-                files.push(entry.path().to_string_lossy().to_string());
-                if files.len() >= MAX_LISTED_FILES {
-                    return Ok(FileList { files, truncated: true });
+fn walk_files(root: &Path, max: usize) -> FileList {
+    use ignore::{WalkBuilder, WalkState};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    let files = Mutex::new(Vec::new());
+    let truncated = AtomicBool::new(false);
+
+    WalkBuilder::new(root)
+        .hidden(false) // .env, .github: VS Code's quick open shows dotfiles too
+        .require_git(false)
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            !(SKIP_ENTRIES.contains(&name.as_ref()) || SKIP_WHEN_LISTING.contains(&name.as_ref()))
+        })
+        .build_parallel()
+        .run(|| {
+            Box::new(|entry| {
+                // Unreadable entries (permissions, broken links) are skipped, not fatal.
+                let Ok(entry) = entry else { return WalkState::Continue };
+                if !entry.file_type().is_some_and(|t| t.is_file() || t.is_symlink()) {
+                    return WalkState::Continue;
                 }
-            }
-        }
-    }
+                let mut files = files.lock().unwrap();
+                if files.len() >= max {
+                    truncated.store(true, Ordering::Relaxed);
+                    return WalkState::Quit;
+                }
+                files.push(entry.path().to_string_lossy().into_owned());
+                WalkState::Continue
+            })
+        });
 
-    Ok(FileList { files, truncated: false })
+    let mut files = files.into_inner().unwrap();
+    // Threads finish in any order; keep the list stable between opens.
+    files.sort_unstable();
+    FileList { files, truncated: truncated.into_inner() }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{move_into, rename, validate_entry_name, write_atomic};
+    use super::{move_into, read_text, rename, validate_entry_name, walk_files, write_atomic};
     use std::path::PathBuf;
 
     fn scratch_dir(label: &str) -> PathBuf {
@@ -453,6 +484,52 @@ mod tests {
 
         assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn refuses_files_over_the_size_limit() {
+        let dir = scratch_dir("size-limit");
+        let file = dir.join("big.log");
+        std::fs::write(&file, vec![b'x'; 2048]).unwrap();
+
+        assert!(read_text(&file, 1024).unwrap_err().contains("not opened"));
+        assert_eq!(read_text(&file, 4096).unwrap().len(), 2048);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn listing_honours_gitignore_and_skips_heavy_folders() {
+        let dir = scratch_dir("listing");
+        std::fs::write(dir.join(".gitignore"), "*.secret\ngenerated/\n").unwrap();
+        std::fs::write(dir.join("keep.ts"), "").unwrap();
+        std::fs::write(dir.join("key.secret"), "").unwrap();
+        std::fs::write(dir.join(".env"), "").unwrap();
+        for folder in ["generated", "node_modules", "src"] {
+            std::fs::create_dir(dir.join(folder)).unwrap();
+            std::fs::write(dir.join(folder).join("a.ts"), "").unwrap();
+        }
+
+        let names: Vec<String> = walk_files(&dir, 100)
+            .files
+            .iter()
+            .map(|f| f.strip_prefix(&*dir.to_string_lossy()).unwrap().to_string())
+            .collect();
+
+        assert_eq!(names, vec!["/.env", "/.gitignore", "/keep.ts", "/src/a.ts"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn listing_stops_at_the_limit() {
+        let dir = scratch_dir("listing-limit");
+        for i in 0..5 {
+            std::fs::write(dir.join(format!("{i}.txt")), "").unwrap();
+        }
+
+        let list = walk_files(&dir, 3);
+        assert_eq!(list.files.len(), 3);
+        assert!(list.truncated);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
