@@ -85,18 +85,18 @@ const GRAMMARS: Record<string, { load: () => Promise<{ language: Language }>; ac
 };
 
 /**
- * Swaps in the enhanced grammar the first time each language is used. A
- * provider set with setMonarchTokensProvider wins over Monaco's lazy one, and
- * open models re-tokenize when it arrives.
+ * Swaps in the enhanced grammar for each language. Monaco's own basic
+ * languages (php, python, java...) register themselves the same way, via
+ * registerTokensProviderFactory in their own monaco.contribution — and that
+ * API is exclusive with setMonarchTokensProvider, whichever is called last
+ * wins the language id. Calling it here too, instead of racing Monaco's lazy
+ * registration with our own setMonarchTokensProvider, makes ours the only
+ * factory Monaco ever calls, deterministically instead of by timing luck.
  */
 export function registerSemanticHighlighting(monaco: Monaco): void {
   for (const [languageId, { load, accessor }] of Object.entries(GRAMMARS)) {
-    monaco.languages.onLanguageEncountered(languageId, () => {
-      load()
-        .then(({ language }) => {
-          monaco.languages.setMonarchTokensProvider(languageId, enhanceLanguage(language, accessor));
-        })
-        .catch(console.error);
+    monaco.languages.registerTokensProviderFactory(languageId, {
+      create: async () => enhanceLanguage((await load()).language, accessor),
     });
   }
 }
