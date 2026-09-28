@@ -10,7 +10,13 @@ Linux (x86_64):
 curl -fsSL https://raw.githubusercontent.com/NexuraGrid/codenxg/main/install.sh | bash
 ```
 
-Windows and macOS: grab the installer from the [latest release](https://github.com/NexuraGrid/codenxg/releases/latest).
+Windows (x64):
+
+```powershell
+irm https://raw.githubusercontent.com/NexuraGrid/codenxg/main/install.ps1 | iex
+```
+
+macOS: grab the installer from the [latest release](https://github.com/NexuraGrid/codenxg/releases/latest).
 
 Arch Linux: see [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD).
 
