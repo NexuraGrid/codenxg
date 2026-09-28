@@ -1,6 +1,18 @@
-# Tauri + React + Typescript
+# CodeNXG
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A code editor built with Tauri, React and TypeScript.
+
+## Install
+
+Linux (x86_64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NexuraGrid/codenxg/main/install.sh | bash
+```
+
+Windows and macOS: grab the installer from the [latest release](https://github.com/NexuraGrid/codenxg/releases/latest).
+
+Arch Linux: see [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD).
 
 ## Recommended IDE Setup
 
