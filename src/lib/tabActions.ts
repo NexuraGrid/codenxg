@@ -1,4 +1,4 @@
-import { useEditorStore, type EditorTab } from "../state/editorStore";
+import { isPathOpen, useEditorStore, type EditorTab } from "../state/editorStore";
 import { showDialog } from "../state/dialogStore";
 import { disposeModel } from "./monacoModelRegistry";
 import { saveFile } from "./fileSave";
@@ -46,34 +46,45 @@ export async function confirmUnsaved(tabs: EditorTab[]): Promise<boolean> {
   }
 }
 
-export async function closeTabs(paths: string[], preferredActive?: string): Promise<void> {
-  const { tabs, closeTabs: removeTabs } = useEditorStore.getState();
-  const closing = tabs.filter((t) => paths.includes(t.path));
+/**
+ * Closes `paths` in one editor group (default: the active one). Only a file's
+ * last open copy asks to save its changes and drops its model: a copy still
+ * open in another group keeps both, since the groups share that model.
+ */
+export async function closeTabs(paths: string[], preferredActive?: string, groupId?: string): Promise<void> {
+  const state = useEditorStore.getState();
+  const targetId = groupId ?? state.activeGroupId;
+  const group = state.groups.find((g) => g.id === targetId);
+  const closing = group?.tabs.filter((t) => paths.includes(t.path)) ?? [];
   if (closing.length === 0) return;
-  if (!(await confirmUnsaved(closing))) return;
+  const lastCopies = closing.filter((t) => !isPathOpen(state, t.path, targetId));
+  if (!(await confirmUnsaved(lastCopies))) return;
 
-  closing.forEach((t) => {
-    disposeModel(t.path);
-    clearViewState(t.path);
-  });
-  removeTabs(
+  for (const t of closing) clearViewState(targetId, t.path);
+  // Rechecked after the prompt: the other copy may have closed meanwhile.
+  const now = useEditorStore.getState();
+  for (const t of closing) if (!isPathOpen(now, t.path, targetId)) disposeModel(t.path);
+  now.closeTabs(
     closing.map((t) => t.path),
     preferredActive,
+    targetId,
   );
 }
 
 /**
- * Opens `tab` as the preview tab (VS Code's single-click open). The preview it
- * replaces is never dirty (editing promotes it), so its model is just dropped.
+ * Opens `tab` as the active group's preview tab (VS Code's single-click open).
+ * The preview it replaces is never dirty (editing promotes it), so its model
+ * is just dropped — unless another group still shows that file.
  */
 export function openPreviewTab(tab: EditorTab): void {
   const store = useEditorStore.getState();
+  const groupId = store.activeGroupId;
   const replaced = store.tabs.find((t) => t.isPreview && t.path !== tab.path);
   store.addTab({ ...tab, isPreview: true });
-  if (replaced && !useEditorStore.getState().tabs.some((t) => t.path === replaced.path)) {
-    disposeModel(replaced.path);
-    clearViewState(replaced.path);
-  }
+  const after = useEditorStore.getState();
+  if (!replaced || after.groups.find((g) => g.id === groupId)?.tabs.some((t) => t.path === replaced.path)) return;
+  clearViewState(groupId, replaced.path);
+  if (!isPathOpen(after, replaced.path)) disposeModel(replaced.path);
 }
 
 export type TabCloseAction = "close" | "others" | "left" | "right" | "all";

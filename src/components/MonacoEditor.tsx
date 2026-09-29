@@ -7,7 +7,7 @@ import { readFile } from "../lib/tauri-api";
 import { getModel, createModel, pathOfModel } from "../lib/monacoModelRegistry";
 import { executeCommand } from "../lib/commands/registry";
 import { SAVE_COMMAND_ID, disableMonacoQuickCommand } from "../lib/commands/appCommands";
-import { setActiveEditor } from "../lib/editorInstance";
+import { clearGroupEditor, setGroupEditor } from "../lib/editorInstance";
 import { installEditorClipboard } from "../lib/editorClipboard";
 import { EDITOR_THEME_ID } from "../lib/editorTheme";
 import { attachGitGutter } from "../lib/gitGutter";
@@ -21,17 +21,28 @@ import { SettingsView } from "./SettingsView";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { openMarkdownPreview } from "../lib/markdownPreview";
 
-export function MonacoEditor() {
+interface MonacoEditorProps {
+  /** The editor group whose active tab this shows. */
+  groupId: string;
+}
+
+/**
+ * One editor group's content: its active tab's editor (or diff / preview /
+ * settings view). Each group has its own Monaco instance and per-tab view
+ * state; a file open in two groups shares its model, so edits show live in both.
+ */
+export function MonacoEditor({ groupId }: MonacoEditorProps) {
   const editorRef = useRef<monacoTypes.editor.IStandaloneCodeEditor | null>(null);
   const requestedPathRef = useRef<string | null>(null);
   const previousPathRef = useRef<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabPath = useEditorStore((s) => s.activeTabPath);
+  const group = useEditorStore((s) => s.groups.find((g) => g.id === groupId));
+  const tabs = group?.tabs;
+  const activeTabPath = group?.activeTabPath ?? null;
   const editorSettings = useSettingsStore((s) => s.settings.editor);
   const options = useMemo(() => buildEditorOptions(editorSettings), [editorSettings]);
 
-  const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
+  const activeTab = tabs?.find((t) => t.path === activeTabPath) ?? null;
 
   // Called from both the tab-change effect and Monaco's onMount (either can
   // fire first). The getModel recheck after the await prevents two models for
@@ -57,7 +68,7 @@ export function MonacoEditor() {
 
     if (requestedPathRef.current === tab.path) {
       editor.setModel(model);
-      const saved = getViewState(tab.path);
+      const saved = getViewState(groupId, tab.path);
       if (saved) {
         try {
           editor.restoreViewState(saved);
@@ -82,7 +93,7 @@ export function MonacoEditor() {
       const model = editor.getModel();
       if (model && pathOfModel(model) === previous) {
         const state = editor.saveViewState();
-        if (state) setViewState(previous, state);
+        if (state) setViewState(groupId, previous, state);
       }
     }
     previousPathRef.current = activeTab.path;
@@ -92,38 +103,63 @@ export function MonacoEditor() {
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       const isSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
-      if (!isSaveShortcut || !activeTab) return;
+      // Every group listens; only the focused one saves (its active tab).
+      if (!isSaveShortcut || !activeTab || useEditorStore.getState().activeGroupId !== groupId) return;
       event.preventDefault();
       void executeCommand(SAVE_COMMAND_ID);
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTab]);
+  }, [activeTab, groupId]);
+
+  // Remember where this group's editor was when the group goes away (closed,
+  // or its last tab moved out), so the file reopens at the same spot.
+  useEffect(
+    () => () => {
+      const editor = editorRef.current;
+      const model = editor?.getModel();
+      const path = model ? pathOfModel(model) : undefined;
+      if (!editor || !path) return;
+      try {
+        const state = editor.saveViewState();
+        if (state) setViewState(groupId, path, state);
+      } catch {
+        // Already disposed: nothing to remember.
+      }
+    },
+    [groupId],
+  );
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
-    setActiveEditor(editor);
+    setGroupEditor(groupId, editor);
     installEditorClipboard(editor, monaco);
     disableMonacoQuickCommand(monaco);
-    // Ctrl+K V: VS Code's "open preview to the side". There are no split
-    // editor groups, so it opens the preview as a tab, like Ctrl+Shift+V.
-    editor.addCommand(
-      monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyCode.KeyV),
-      () => {
-        const model = editor.getModel();
+    // Clicking or tabbing into this editor focuses its group.
+    editor.onDidFocusEditorText(() => useEditorStore.getState().focusGroup(groupId));
+    // Ctrl+K V: VS Code's "open preview to the side"; for now it opens the
+    // preview as a tab, like Ctrl+Shift+V. An action, not addCommand: those
+    // are global in Monaco (the last editor's would win).
+    const previewToSide = editor.addAction({
+      id: "codenxg.markdown.showPreviewToSide",
+      label: "Open Preview to the Side",
+      keybindings: [monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyCode.KeyV)],
+      precondition: "editorLangId == markdown",
+      run: (target) => {
+        const model = target.getModel();
         const path = model ? pathOfModel(model) : undefined;
         if (path) openMarkdownPreview(path);
       },
-      "editorLangId == markdown",
-    );
+    });
     const detachGutter = attachGitGutter(editor);
     // The editor unmounts when the last tab closes; don't leave a disposed
     // instance reachable from the palette.
     editor.onDidDispose(() => {
       detachGutter();
+      previewToSide.dispose();
       if (editorRef.current === editor) editorRef.current = null;
-      setActiveEditor(null);
+      clearGroupEditor(groupId, editor);
     });
     // Monaco measures glyph widths at mount; if the web font arrives later
     // the caret and selections drift unless it re-measures.
@@ -155,7 +191,7 @@ export function MonacoEditor() {
   }
 
   if (activeTab.showDiff) {
-    return <DiffView key={activeTab.path} tab={activeTab} />;
+    return <DiffView key={activeTab.path} tab={activeTab} groupId={groupId} />;
   }
 
   return (

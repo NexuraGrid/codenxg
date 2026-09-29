@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useEditorStore } from "../state/editorStore";
+import { allTabs, uniqueOpenTabs, useEditorStore } from "../state/editorStore";
 import { useSettingsStore } from "../state/settingsStore";
 import { onModelChange } from "./monacoModelRegistry";
 import { saveFile } from "./fileSave";
@@ -20,7 +20,7 @@ export function useAutoSave(): void {
 
     function saveIfDirty(path: string | null) {
       if (!path) return;
-      const tab = useEditorStore.getState().tabs.find((t) => t.path === path);
+      const tab = allTabs(useEditorStore.getState()).find((t) => t.path === path);
       if (tab && tab.isDirty && isRealFileTab(tab)) saveFile(path).catch(console.error);
     }
 
@@ -43,7 +43,7 @@ export function useAutoSave(): void {
 
     if (autoSaveAppliesTo(mode, "blur")) {
       const onBlur = () => {
-        for (const tab of autoSavableTabs(useEditorStore.getState().tabs)) saveIfDirty(tab.path);
+        for (const tab of autoSavableTabs(uniqueOpenTabs(useEditorStore.getState()))) saveIfDirty(tab.path);
       };
       window.addEventListener("blur", onBlur);
       disposers.push(() => window.removeEventListener("blur", onBlur));

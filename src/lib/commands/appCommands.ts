@@ -1,6 +1,6 @@
 import type * as monacoTypes from "monaco-editor";
 import type { Command } from "./registry";
-import { useEditorStore, type EditorTab } from "../../state/editorStore";
+import { MAX_EDITOR_GROUPS, useEditorStore, type EditorTab } from "../../state/editorStore";
 import { usePaletteStore } from "../../state/paletteStore";
 import { usePinQuickPickStore } from "../../state/pinQuickPickStore";
 import { usePinGroupStore } from "../../state/pinGroupStore";
@@ -16,6 +16,16 @@ import {
   openMarkdownPreview,
   toggleMarkdownPreview,
 } from "../markdownPreview";
+import { closeGroup, focusGroupAt, moveEditorToGroup, moveEditorToOtherGroup, splitEditor } from "../editorGroupActions";
+import {
+  CLOSE_GROUP_ID,
+  FOCUS_LEFT_GROUP_ID,
+  FOCUS_RIGHT_GROUP_ID,
+  MOVE_EDITOR_LEFT_ID,
+  MOVE_EDITOR_OTHER_ID,
+  MOVE_EDITOR_RIGHT_ID,
+  SPLIT_EDITOR_ID,
+} from "../editorGroupHotkeys";
 import {
   activeFilePath,
   addActiveFileToGroup,
@@ -141,6 +151,79 @@ function pinGroupCommands(): Command[] {
   ];
 }
 
+function activeGroupIndex(): number {
+  const { groups, activeGroupId } = useEditorStore.getState();
+  return groups.findIndex((g) => g.id === activeGroupId);
+}
+
+/** Whether "move right" has somewhere to go: a group there, or room for one worth creating. */
+function canMoveRight(): boolean {
+  const { groups, tabs } = useEditorStore.getState();
+  if (!activeTab()) return false;
+  if (activeGroupIndex() < groups.length - 1) return true;
+  return groups.length < MAX_EDITOR_GROUPS && tabs.length > 1;
+}
+
+function editorGroupCommands(): Command[] {
+  const groupCount = () => useEditorStore.getState().groups.length;
+  return [
+    {
+      id: SPLIT_EDITOR_ID,
+      title: "Split Editor",
+      category: "View",
+      keybinding: "mod+\\",
+      when: () => Boolean(activeTab()),
+      run: splitEditor,
+    },
+    {
+      id: MOVE_EDITOR_RIGHT_ID,
+      title: "Move Editor into Right Group",
+      category: "View",
+      keybinding: "mod+alt+right",
+      when: canMoveRight,
+      run: () => moveEditorToGroup("right"),
+    },
+    {
+      id: MOVE_EDITOR_LEFT_ID,
+      title: "Move Editor into Left Group",
+      category: "View",
+      keybinding: "mod+alt+left",
+      when: () => Boolean(activeTab()) && activeGroupIndex() > 0,
+      run: () => moveEditorToGroup("left"),
+    },
+    {
+      id: MOVE_EDITOR_OTHER_ID,
+      title: "Move Editor to Other Group",
+      category: "View",
+      when: () => Boolean(activeTab()) && (groupCount() > 1 || canMoveRight()),
+      run: moveEditorToOtherGroup,
+    },
+    {
+      id: FOCUS_LEFT_GROUP_ID,
+      title: "Focus Left Editor Group",
+      category: "View",
+      keybinding: "mod+1",
+      run: () => focusGroupAt(0),
+    },
+    {
+      id: FOCUS_RIGHT_GROUP_ID,
+      title: "Focus Right Editor Group",
+      category: "View",
+      keybinding: "mod+2",
+      // With a single group, splits the active editor into a new right group (as VS Code does).
+      when: () => groupCount() > 1 || Boolean(activeTab()),
+      run: () => focusGroupAt(1),
+    },
+    {
+      id: CLOSE_GROUP_ID,
+      title: "Close Editor Group",
+      category: "View",
+      when: () => groupCount() > 1,
+      run: () => closeGroup(),
+    },
+  ];
+}
+
 /** The app-wide commands that don't depend on the Layout's own state. */
 export function appCommands(): Command[] {
   return [
@@ -239,6 +322,8 @@ export function appCommands(): Command[] {
         if (path) await useExplorerStore.getState().reveal(path);
       },
     },
+
+    ...editorGroupCommands(),
 
     ...pinGroupCommands(),
 

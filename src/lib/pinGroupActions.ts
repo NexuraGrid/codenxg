@@ -45,6 +45,9 @@ export async function savePinnedTabsAsGroup(): Promise<void> {
  * Makes `groupId` the active group: its files open as pinned tabs (missing
  * ones are skipped) and the first is activated; the previous group's tabs
  * that aren't in it close, unless they have unsaved changes.
+ *
+ * With split editors this acts on the focused editor group only: the other
+ * group's tabs (pinned or not) are left alone.
  */
 export async function switchPinGroup(groupId: string, exists: ExistenceCheck = existingPaths): Promise<void> {
   const pins = usePinGroupStore.getState();
@@ -52,21 +55,26 @@ export async function switchPinGroup(groupId: string, exists: ExistenceCheck = e
   if (!next) return;
   const previous = pins.groups.find((g) => g.id === pins.activeGroupId);
 
+  // Pinned to the editor group focused now, even if focus moves meanwhile.
+  const editorGroupId = useEditorStore.getState().activeGroupId;
   const plan = planGroupSwitch(useEditorStore.getState().tabs, previous, next);
   const present = await exists(plan.open);
   const opening = plan.open.filter((path) => present.has(path));
 
-  await closeTabs(plan.close, opening[0]);
-
-  const store = useEditorStore.getState();
+  // Open before closing: an editor group emptied by the close would be removed.
+  const editorTabs = () => useEditorStore.getState().groups.find((g) => g.id === editorGroupId)?.tabs ?? [];
   for (const path of opening) {
-    if (store.tabs.some((t) => t.path === path)) {
-      useEditorStore.getState().setPinned(path, true);
+    if (editorTabs().some((t) => t.path === path)) {
+      useEditorStore.getState().setPinned(path, true, editorGroupId);
     } else {
-      useEditorStore.getState().addTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path), isPinned: true });
+      useEditorStore
+        .getState()
+        .addTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path), isPinned: true }, editorGroupId);
     }
   }
-  if (opening[0]) useEditorStore.getState().setActiveTab(opening[0]);
+  if (opening[0]) useEditorStore.getState().setActiveTab(opening[0], editorGroupId);
+
+  await closeTabs(plan.close, opening[0], editorGroupId);
   usePinGroupStore.getState().setActiveGroup(groupId);
 }
 

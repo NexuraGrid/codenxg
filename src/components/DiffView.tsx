@@ -4,7 +4,7 @@ import { useEditorStore, type EditorTab } from "../state/editorStore";
 import { headText, useGitStore } from "../state/gitStore";
 import { readFile } from "../lib/tauri-api";
 import { createModel, getModel } from "../lib/monacoModelRegistry";
-import { setActiveEditor } from "../lib/editorInstance";
+import { clearGroupEditor, setGroupEditor } from "../lib/editorInstance";
 import { installEditorClipboard } from "../lib/editorClipboard";
 import { EDITOR_THEME_ID } from "../lib/editorTheme";
 import { EDITOR_OPTIONS } from "../lib/editorOptions";
@@ -14,7 +14,7 @@ import { EDITOR_OPTIONS } from "../lib/editorOptions";
  * it is now (right). The right side is the tab's own model: edits, undo and
  * Ctrl+S behave exactly as in the normal editor.
  */
-export function DiffView({ tab }: { tab: EditorTab }) {
+export function DiffView({ tab, groupId }: { tab: EditorTab; groupId: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const originalRef = useRef<monaco.editor.ITextModel | null>(null);
   const headVersion = useGitStore((s) => s.headVersion);
@@ -33,7 +33,8 @@ export function DiffView({ tab }: { tab: EditorTab }) {
       renderOverviewRuler: false,
     });
     const modifiedEditor = diff.getModifiedEditor();
-    setActiveEditor(modifiedEditor);
+    setGroupEditor(groupId, modifiedEditor);
+    modifiedEditor.onDidFocusEditorText(() => useEditorStore.getState().focusGroup(groupId));
     installEditorClipboard(modifiedEditor, monaco);
 
     const original = monaco.editor.createModel("", tab.language);
@@ -66,9 +67,9 @@ export function DiffView({ tab }: { tab: EditorTab }) {
       original.dispose();
       placeholder?.dispose();
       originalRef.current = null;
-      setActiveEditor(null);
+      clearGroupEditor(groupId, modifiedEditor);
     };
-  }, [tab.path, tab.language]);
+  }, [tab.path, tab.language, groupId]);
 
   // Refills the left side on open and whenever HEAD moves (a commit, a checkout).
   useEffect(() => {
@@ -88,7 +89,7 @@ export function DiffView({ tab }: { tab: EditorTab }) {
         <span className="diff-view__hint">Last commit ↔ Working tree</span>
         <button
           className="diff-view__open"
-          onClick={() => useEditorStore.getState().setShowDiff(tab.path, false)}
+          onClick={() => useEditorStore.getState().setShowDiff(tab.path, false, groupId)}
         >
           Open File
         </button>

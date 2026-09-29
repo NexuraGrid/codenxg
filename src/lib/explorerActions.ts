@@ -1,7 +1,7 @@
 import { deleteEntryPermanently, moveEntry, renameEntry, trashEntry } from "./tauri-api";
 import { disposeModel, rebaseModels } from "./monacoModelRegistry";
 import { basename, isSameOrInside } from "./paths";
-import { useEditorStore } from "../state/editorStore";
+import { uniqueOpenTabs, useEditorStore } from "../state/editorStore";
 import { useExplorerStore } from "../state/explorerStore";
 import { usePinGroupStore } from "../state/pinGroupStore";
 import { showDialog } from "../state/dialogStore";
@@ -58,7 +58,7 @@ export async function movePath(oldPath: string, oldParentDir: string, targetDir:
  */
 export async function deletePath(path: string, isDir: boolean, parentDir: string): Promise<void> {
   const name = basename(path);
-  const affectedTabs = useEditorStore.getState().tabs.filter((t) => isSameOrInside(t.path, path));
+  const affectedTabs = uniqueOpenTabs(useEditorStore.getState()).filter((t) => isSameOrInside(t.path, path));
   const unsaved = affectedTabs.some((t) => t.isDirty);
 
   const confirmed = await showDialog({
@@ -106,7 +106,7 @@ export async function deletePath(path: string, isDir: boolean, parentDir: string
   // Closed without the save prompt: saving would recreate what was deleted.
   const closing = affectedTabs.map((t) => t.path);
   closing.forEach(disposeModel);
-  useEditorStore.getState().closeTabs(closing);
+  useEditorStore.getState().closeTabsEverywhere(closing);
   usePinGroupStore.getState().forgetPathsUnder(path);
 
   const explorer = useExplorerStore.getState();

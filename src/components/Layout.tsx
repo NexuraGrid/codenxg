@@ -4,8 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FileTree } from "./FileTree";
 import { PinGroupsSection } from "./PinGroupsSection";
 import { useExplorerStore } from "../state/explorerStore";
-import { EditorTabs } from "./EditorTabs";
-import { MonacoEditor } from "./MonacoEditor";
+import { EditorGroups } from "./EditorGroups";
 import { TerminalPanel } from "./TerminalPanel";
 import { TerminalTabs } from "./TerminalTabs";
 import { SourceControl } from "./SourceControl";
@@ -18,6 +17,7 @@ import { QuickOpen } from "./QuickOpen";
 import { CommandPalette } from "./CommandPalette";
 import { PinGroupQuickPick, usePinQuickPickHotkeys } from "./PinGroupQuickPick";
 import { useHotkey } from "../lib/useHotkey";
+import { useEditorGroupHotkeys } from "../lib/editorGroupHotkeys";
 import { useFileWatcher } from "../lib/fileWatcher";
 import { useAutoSave } from "../lib/useAutoSave";
 import { connectLanguageServers } from "../lib/lsp/manager";
@@ -97,7 +97,11 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
 
   useEffect(() => {
     const unsubscribe = useEditorStore.subscribe((state, previous) => {
-      if (state.tabs !== previous.tabs || state.activeTabPath !== previous.activeTabPath) {
+      if (
+        state.groups !== previous.groups ||
+        state.activeGroupId !== previous.activeGroupId ||
+        state.groupSizes !== previous.groupSizes
+      ) {
         scheduleSaveWorkspaceTabs(workspaceRoot);
       }
     });
@@ -192,6 +196,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
 
   useHotkey("mod+,", openSettingsTab, { capture: true });
   usePinQuickPickHotkeys();
+  useEditorGroupHotkeys();
   // Ctrl+Shift+V: Markdown preview. Plain Ctrl+V (paste) never matches, and
   // the terminal and text fields keep their own Ctrl+Shift+V paste.
   useHotkey("mod+shift+v", toggleMarkdownPreview, {
@@ -242,10 +247,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
 
         <Panel defaultSize={53} minSize={30}>
           <section className="panel editor">
-            <EditorTabs />
-            <div className="editor__body">
-              <MonacoEditor />
-            </div>
+            <EditorGroups />
           </section>
         </Panel>
 

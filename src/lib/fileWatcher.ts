@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { readFile, startWatcher, watchDirs } from "./tauri-api";
 import { basename, dirname, isSameOrInside } from "./paths";
 import { getModel, markDeletedOnDisk, reloadFromDisk, syncWithDisk } from "./monacoModelRegistry";
-import { useEditorStore } from "../state/editorStore";
+import { uniqueOpenTabs, useEditorStore } from "../state/editorStore";
 import { useExplorerStore } from "../state/explorerStore";
 import { showDialog } from "../state/dialogStore";
 import { useGitStore } from "../state/gitStore";
@@ -59,7 +59,7 @@ function watchedDirs(root: string): string[] {
   // checkout, including ones run from the terminal.
   const dirs = new Set([root, `${root}/.git`]);
   for (const [dir, isOpen] of Object.entries(expanded)) if (isOpen) dirs.add(dir);
-  for (const tab of useEditorStore.getState().tabs) {
+  for (const tab of uniqueOpenTabs(useEditorStore.getState())) {
     if (isSameOrInside(tab.path, root)) dirs.add(dirname(tab.path));
   }
   return [...dirs].sort();
@@ -80,7 +80,7 @@ function applyChanges(paths: string[]): void {
     if (explorer.children[dir]) explorer.refresh(dir).catch(() => explorer.forgetPath(dir));
   }
 
-  for (const tab of useEditorStore.getState().tabs) {
+  for (const tab of uniqueOpenTabs(useEditorStore.getState())) {
     if (paths.some((path) => isSameOrInside(tab.path, path))) void syncOpenFile(tab.path);
   }
 }

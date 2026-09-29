@@ -10,7 +10,7 @@ import { DialogHost } from "./components/DialogHost";
 import { Toaster } from "./components/Toaster";
 import { disposeAllModels } from "./lib/monacoModelRegistry";
 import { pickFolder, rememberWorkspace, restoreLastWorkspace } from "./lib/workspace";
-import { useEditorStore } from "./state/editorStore";
+import { uniqueOpenTabs, useEditorStore } from "./state/editorStore";
 import { usePinGroupStore } from "./state/pinGroupStore";
 import { useSettingsStore } from "./state/settingsStore";
 import { useTerminalStore } from "./state/terminalStore";
@@ -71,8 +71,7 @@ function App() {
     if (selected === workspaceRoot) return;
 
     if (workspaceRoot) {
-      const { tabs } = useEditorStore.getState();
-      if (!(await confirmUnsaved(tabs))) return;
+      if (!(await confirmUnsaved(uniqueOpenTabs(useEditorStore.getState())))) return;
     }
 
     // Switch the backend's scope first: if it refuses, the current project

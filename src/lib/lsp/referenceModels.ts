@@ -10,7 +10,7 @@
 // To avoid leaking these "loaned" models forever, each new batch releases
 // whatever the previous batch loaned and never got promoted to a real tab.
 import * as monaco from "monaco-editor";
-import { useEditorStore } from "../../state/editorStore";
+import { allTabs, useEditorStore } from "../../state/editorStore";
 import { createModel, disposeModel, getModel } from "../monacoModelRegistry";
 import { pathFromUri } from "../paths";
 import { readFile } from "../tauri-api";
@@ -42,7 +42,7 @@ export async function ensureModelsForLocations(locations: monaco.languages.Locat
 /** Disposes every loaned model that never became a real tab in the meantime. */
 export function releaseUnusedLoanedModels(): void {
   if (loanedPaths.size === 0) return;
-  const openPaths = new Set(useEditorStore.getState().tabs.map((t) => t.path));
+  const openPaths = new Set(allTabs(useEditorStore.getState()).map((t) => t.path));
   for (const path of loanedPaths) {
     if (!openPaths.has(path)) disposeModel(path);
   }

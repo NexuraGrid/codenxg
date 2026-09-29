@@ -606,6 +606,46 @@ svg {
   visibility: visible;
 }
 
+/* ================= EDITOR GROUPS ================= */
+.editor-group {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+/* The focused group's tab bar gets an accent line; the other one's active tab dims. */
+.editor-group.is-active .tabs {
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.editor-group.is-inactive .tab.is-active {
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.editor-groups__divider {
+  position: relative;
+  width: 1px;
+  background: var(--border);
+}
+
+.editor-groups__divider::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 3px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.editor-groups__divider:hover::after,
+.editor-groups__divider[data-resize-handle-active]::after {
+  background: var(--accent);
+}
+
 .editor__body {
   position: relative;
   flex: 1;

@@ -1,7 +1,8 @@
 import { useCallback, useState, type MouseEvent } from "react";
-import { useEditorStore, type EditorTab } from "../state/editorStore";
+import { MAX_EDITOR_GROUPS, useEditorStore, type EditorTab } from "../state/editorStore";
 import { closeTabs, pathsToClose, type TabCloseAction } from "../lib/tabActions";
 import { isMarkdownSourceTab, openMarkdownPreview } from "../lib/markdownPreview";
+import { moveEditorToOtherGroup, splitEditor } from "../lib/editorGroupActions";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
 import { CloseIcon, GearIcon, PinIcon } from "./icons";
@@ -26,9 +27,22 @@ function tabTooltip(tab: EditorTab): string {
   return tab.path;
 }
 
-export function EditorTabs() {
-  const tabs = useEditorStore((s) => s.tabs);
-  const activeTabPath = useEditorStore((s) => s.activeTabPath);
+const NO_TABS: EditorTab[] = [];
+
+interface EditorTabsProps {
+  /** The editor group whose tabs this bar shows. */
+  groupId: string;
+  /** The leftmost group's bar hosts the pin group switcher. */
+  showPinGroupSwitcher: boolean;
+  /** The rightmost group's bar doubles as the title bar's right end. */
+  showWindowControls: boolean;
+}
+
+export function EditorTabs({ groupId, showPinGroupSwitcher, showWindowControls }: EditorTabsProps) {
+  const tabs = useEditorStore((s) => s.groups.find((g) => g.id === groupId)?.tabs ?? NO_TABS);
+  const activeTabPath = useEditorStore((s) => s.groups.find((g) => g.id === groupId)?.activeTabPath ?? null);
+  const groupCount = useEditorStore((s) => s.groups.length);
+  const isFocusedGroup = useEditorStore((s) => s.activeGroupId === groupId);
   const setActiveTab = useEditorStore((s) => s.setActiveTab);
   const makePermanent = useEditorStore((s) => s.makePermanent);
   const setPinned = useEditorStore((s) => s.setPinned);
@@ -41,7 +55,7 @@ export function EditorTabs() {
   function run(action: TabCloseAction, target: string) {
     // The right-clicked tab survives "others/left/right", so it takes focus
     // if the active tab was among the closed ones — same as VS Code.
-    closeTabs(pathsToClose(tabs, target, action), target);
+    closeTabs(pathsToClose(tabs, target, action), target, groupId);
   }
 
   function handleClose(event: MouseEvent, path: string) {
@@ -51,7 +65,7 @@ export function EditorTabs() {
 
   function handleUnpin(event: MouseEvent, path: string) {
     event.stopPropagation();
-    setPinned(path, false);
+    setPinned(path, false, groupId);
   }
 
   function handleAuxClick(event: MouseEvent, path: string) {
@@ -60,7 +74,18 @@ export function EditorTabs() {
 
   function handleContextMenu(event: MouseEvent, path: string) {
     event.preventDefault();
+    // The menu's actions (split, move, pin groups) act on the focused group and tab.
+    setActiveTab(path, groupId);
     setMenu({ x: event.clientX, y: event.clientY, path });
+  }
+
+  function groupEntries(): ContextMenuEntry[] {
+    const canMove = groupCount > 1 || tabs.length > 1;
+    return [
+      { type: "item", label: groupCount < MAX_EDITOR_GROUPS ? "Split Right" : "Split to Other Group", onSelect: splitEditor },
+      { type: "item", label: "Move to Other Group", disabled: !canMove, onSelect: moveEditorToOtherGroup },
+      { type: "separator" },
+    ];
   }
 
   function menuEntries(target: string): ContextMenuEntry[] {
@@ -72,6 +97,7 @@ export function EditorTabs() {
         : [];
     return [
       ...preview,
+      ...groupEntries(),
       { type: "item", label: "Close", onSelect: () => run("close", target) },
       { type: "item", label: "Close Others", disabled: tabs.length < 2, onSelect: () => run("others", target) },
       { type: "item", label: "Close to the Left", disabled: index <= 0, onSelect: () => run("left", target) },
@@ -94,7 +120,7 @@ export function EditorTabs() {
           ]
         : []),
       { type: "separator" },
-      { type: "item", label: isPinned ? "Unpin" : "Pin", onSelect: () => setPinned(target, !isPinned) },
+      { type: "item", label: isPinned ? "Unpin" : "Pin", onSelect: () => setPinned(target, !isPinned, groupId) },
       ...(tabs[index] && isPersistableTab(tabs[index]) ? pinGroupEntries(target) : []),
     ];
   }
@@ -136,16 +162,16 @@ export function EditorTabs() {
   }
 
   return (
-    <header className="tabs">
-      <PinGroupSwitcher />
+    <header className={`tabs${isFocusedGroup && groupCount > 1 ? " is-focused-group" : ""}`}>
+      {showPinGroupSwitcher && <PinGroupSwitcher />}
       <div className="tabs__list">
         {tabs.map((tab) => (
           <div
             key={tab.path}
             className={`tab${tab.path === activeTabPath ? " is-active" : ""}${tab.isPreview ? " is-preview" : ""}${tab.isPinned ? " is-pinned" : ""}${activeGroup?.paths.includes(tab.path) ? " in-group" : ""}`}
             title={activeGroup?.paths.includes(tab.path) ? `${tabTooltip(tab)} • ${activeGroup.name}` : tabTooltip(tab)}
-            onClick={() => setActiveTab(tab.path)}
-            onDoubleClick={() => makePermanent(tab.path)}
+            onClick={() => setActiveTab(tab.path, groupId)}
+            onDoubleClick={() => makePermanent(tab.path, groupId)}
             onAuxClick={(e) => handleAuxClick(e, tab.path)}
             onContextMenu={(e) => handleContextMenu(e, tab.path)}
           >
@@ -168,7 +194,7 @@ export function EditorTabs() {
         ))}
       </div>
       <div className="tabs__drag" data-tauri-drag-region />
-      <WindowControls />
+      {showWindowControls && <WindowControls />}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} entries={menuEntries(menu.path)} onClose={closeMenu} />}
     </header>

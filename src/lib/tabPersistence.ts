@@ -1,10 +1,10 @@
 import { readDir, readWorkspacesState, writeWorkspacesState } from "./tauri-api";
 import { dirname } from "./paths";
 import { useEditorStore } from "../state/editorStore";
-import { getActiveEditor } from "./editorInstance";
+import { getGroupEditor } from "./editorInstance";
 import { pathOfModel } from "./monacoModelRegistry";
-import { allViewStates, setViewState } from "./tabViewState";
-import { buildWorkspaceRecord, planRestoreTabs, readPinGroups, upsertWorkspaceState, type WorkspacesState } from "./persistedTabs";
+import { setViewState, viewStatesOf } from "./tabViewState";
+import { buildLayoutRecord, planRestoreLayout, readPinGroups, rememberedPaths, upsertWorkspaceState, type WorkspacesState } from "./persistedTabs";
 import { usePinGroupStore } from "../state/pinGroupStore";
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -58,46 +58,70 @@ export async function existingPaths(paths: string[]): Promise<Set<string>> {
   return existing;
 }
 
-/** Reopens a workspace's remembered tabs the same way a user click would: through addTab. */
+/**
+ * Reopens a workspace's remembered tabs the same way a user click would
+ * (through addTab), group by group, then restores focus and group sizes.
+ */
 export async function restoreWorkspaceTabs(root: string): Promise<void> {
   const state = await ensureCache();
   const record = state[root];
   const pins = readPinGroups(record);
   usePinGroupStore.getState().load(root, pins.groups, pins.activeGroupId);
-  if (!record || record.tabs.length === 0) return;
+  if (!record) return;
 
-  const existing = await existingPaths(record.tabs.map((t) => t.path));
-  const plan = planRestoreTabs(record, existing);
-  if (plan.tabsToOpen.length === 0) return;
+  const remembered = rememberedPaths(record);
+  if (remembered.length === 0) return;
+  const existing = await existingPaths(remembered);
+  const plan = planRestoreLayout(record, existing);
+  if (plan.groups.every((g) => g.tabsToOpen.length === 0)) return;
 
-  for (const tab of plan.tabsToOpen) useEditorStore.getState().addTab(tab);
-  for (const [path, viewState] of plan.viewStates) setViewState(path, viewState);
-  if (plan.activePath) useEditorStore.getState().setActiveTab(plan.activePath);
+  const store = useEditorStore.getState;
+  const groupIds: string[] = [];
+  let groupId = store().groups[0].id;
+  plan.groups.forEach((group, index) => {
+    if (index > 0) {
+      const added = store().addGroup(groupId);
+      if (!added) return;
+      groupId = added;
+    }
+    groupIds.push(groupId);
+    for (const tab of group.tabsToOpen) store().addTab(tab, groupId);
+    for (const [path, viewState] of group.viewStates) setViewState(groupId, path, viewState);
+    if (group.activePath) store().setActiveTab(group.activePath, groupId);
+  });
+  if (plan.sizes && plan.sizes.length === store().groups.length) store().setGroupSizes(plan.sizes);
+  store().focusGroup(groupIds[plan.activeIndex] ?? groupIds[0]);
 }
 
-/** Best-effort: refreshes the cache for whichever tab is on screen right now. */
-function captureActiveViewState(): void {
-  const editor = getActiveEditor();
-  const activePath = useEditorStore.getState().activeTabPath;
-  if (!editor || !activePath) return;
-  const model = editor.getModel();
-  if (!model || pathOfModel(model) !== activePath) return;
-  try {
-    const state = editor.saveViewState();
-    if (state) setViewState(activePath, state);
-  } catch {
-    // Not fatal: the tab just reopens without a remembered cursor position.
+/** Best-effort: refreshes the cache for whichever tab each group shows right now. */
+function captureVisibleViewStates(): void {
+  for (const group of useEditorStore.getState().groups) {
+    const editor = getGroupEditor(group.id);
+    if (!editor || !group.activeTabPath) continue;
+    const model = editor.getModel();
+    if (!model || pathOfModel(model) !== group.activeTabPath) continue;
+    try {
+      const state = editor.saveViewState();
+      if (state) setViewState(group.id, group.activeTabPath, state);
+    } catch {
+      // Not fatal: the tab just reopens without a remembered cursor position.
+    }
   }
 }
 
 async function flushWorkspaceTabs(root: string): Promise<void> {
-  captureActiveViewState();
+  captureVisibleViewStates();
   const state = await ensureCache();
-  const { tabs, activeTabPath } = useEditorStore.getState();
+  const { groups, activeGroupId, groupSizes } = useEditorStore.getState();
   // Until restore has loaded this workspace's groups, keep the saved ones.
   const pinStore = usePinGroupStore.getState();
   const pins = pinStore.root === root ? pinStore : readPinGroups(state[root]);
-  const record = buildWorkspaceRecord(tabs, activeTabPath, allViewStates(), Date.now(), pins);
+  const layout = {
+    groups: groups.map((g) => ({ tabs: g.tabs, activeTabPath: g.activeTabPath, viewStates: viewStatesOf(g.id) })),
+    activeIndex: Math.max(0, groups.findIndex((g) => g.id === activeGroupId)),
+    sizes: groupSizes,
+  };
+  const record = buildLayoutRecord(layout, Date.now(), pins);
   const next = upsertWorkspaceState(state, root, record);
   cache = next;
   try {
