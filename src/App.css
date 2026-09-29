@@ -2367,6 +2367,17 @@ body.is-dragging-entry * {
   font-style: italic;
 }
 
+.md-preview__image {
+  max-width: 100%;
+  height: auto;
+}
+
+.md-preview__img-loading {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+}
+
 /* Pin Groups quick pick (PinGroupQuickPick.tsx), on top of the palette styles. */
 .palette__crumb {
   display: flex;

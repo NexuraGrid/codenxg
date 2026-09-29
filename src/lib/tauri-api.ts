@@ -46,6 +46,14 @@ export function readFile(path: string): Promise<string> {
   return invoke("read_file", { path });
 }
 
+/**
+ * Raw bytes of an image inside the workspace (the Markdown preview); rejects
+ * anything else, see read_image_data on the Rust side.
+ */
+export function readImageData(path: string): Promise<ArrayBuffer> {
+  return invoke("read_image_data", { path });
+}
+
 export function writeFile(path: string, content: string): Promise<void> {
   return invoke("write_file", { path, content });
 }

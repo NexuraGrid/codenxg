@@ -1,10 +1,12 @@
-import { useDeferredValue, useEffect, useState, type ComponentProps, type MouseEvent } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, type ComponentProps, type MouseEvent } from "react";
 import * as monaco from "monaco-editor";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getModel } from "../lib/monacoModelRegistry";
 import { readFile } from "../lib/tauri-api";
+import { acquireLocalImage, releaseLocalImage, resolveImageSource, type ImageSource } from "../lib/markdownImages";
+import { useExplorerStore } from "../state/explorerStore";
 
 // Raw HTML stays disabled (react-markdown's default): no rehype-raw.
 const REMARK_PLUGINS = [remarkGfm];
@@ -114,20 +116,75 @@ function Link({ href, children, ...rest }: ComponentProps<"a">) {
   );
 }
 
-// The CSP only lets the webview load its own and data:/blob: images, and the
-// asset protocol is off, so images are shown as their alt text instead.
-function Image({ alt, src }: ComponentProps<"img">) {
+function ImagePlaceholder({ alt, src }: { alt?: string; src?: string }) {
   return (
-    <span className="md-preview__img" title={typeof src === "string" ? src : undefined}>
+    <span className="md-preview__img" title={src}>
       [image{alt ? `: ${alt}` : ""}]
     </span>
   );
 }
 
-const COMPONENTS: Components = { code: Code, a: Link, img: Image };
+/**
+ * The asset protocol stays off: workspace images come through
+ * read_image_data as blob: URLs, https and data: images load directly (see
+ * the CSP's img-src). Anything else, or anything that fails, shows as its
+ * alt text.
+ */
+function PreviewImage({ image, alt, src, title }: { image: ImageSource; alt?: string; src: string; title?: string }) {
+  const [url, setUrl] = useState<string | null>(image.kind === "url" ? image.url : null);
+  const [failed, setFailed] = useState(false);
+  const localPath = image.kind === "local" ? image.path : null;
+  const localMime = image.kind === "local" ? image.mime : null;
+
+  useEffect(() => {
+    if (localPath === null || localMime === null) return;
+    let cancelled = false;
+    // A failed read drops its own cache entry: releasing it then could
+    // release someone else's newer one for the same path.
+    let held = true;
+    acquireLocalImage(localPath, localMime)
+      .then((blobUrl) => !cancelled && setUrl(blobUrl))
+      .catch(() => {
+        held = false;
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      if (held) releaseLocalImage(localPath);
+    };
+  }, [localPath, localMime]);
+
+  if (failed) return <ImagePlaceholder alt={alt} src={src} />;
+  if (url === null) return <span className="md-preview__img-loading" title={src} />;
+  return (
+    <img
+      className="md-preview__image"
+      src={url}
+      alt={alt ?? ""}
+      title={title ?? src}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function makeComponents(source: string, root: string | null): Components {
+  function Image({ alt, src, title }: ComponentProps<"img">) {
+    const raw = typeof src === "string" ? src : "";
+    const image = raw ? resolveImageSource(raw, source, root) : null;
+    if (!image) return <ImagePlaceholder alt={alt} src={raw || undefined} />;
+    // Keyed by where it points, so a changed src starts over (and a failed one retries).
+    const key = image.kind === "local" ? image.path : image.url;
+    return <PreviewImage key={key} image={image} alt={alt} src={raw} title={title} />;
+  }
+  return { code: Code, a: Link, img: Image };
+}
 
 export function MarkdownPreview({ source }: { source: string }) {
   const { text, error } = useMarkdownSource(source);
+  const root = useExplorerStore((s) => s.root);
+  // Stable per file: new component types each render would remount every image.
+  const components = useMemo(() => makeComponents(source, root), [source, root]);
   // Re-rendering the whole document per keystroke must not slow typing down.
   const deferred = useDeferredValue(text);
 
@@ -136,7 +193,7 @@ export function MarkdownPreview({ source }: { source: string }) {
   return (
     <div className="md-preview">
       <article className="md-preview__body">
-        <Markdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+        <Markdown remarkPlugins={REMARK_PLUGINS} components={components}>
           {deferred}
         </Markdown>
       </article>

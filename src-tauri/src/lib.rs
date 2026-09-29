@@ -13,6 +13,7 @@ use commands::git::{
     git_stash_and_switch, git_stash_apply, git_stash_drop, git_stash_file_diff, git_stash_files,
     git_stash_list, git_stash_pop, git_stash_push, git_status, git_unstage,
 };
+use commands::image::read_image_data;
 use commands::launch::{folder_from_args, launch_folder};
 use commands::lsp::{lsp_install, lsp_send, lsp_start, lsp_stop, LspRegistry};
 use commands::search::{search_in_workspace, write_search_files};
@@ -86,6 +87,7 @@ pub fn run() {
             lsp_stop,
             read_dir,
             read_file,
+            read_image_data,
             write_file,
             create_entry,
             rename_entry,

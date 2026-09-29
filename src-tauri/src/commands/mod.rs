@@ -1,6 +1,7 @@
 pub mod cli_install;
 pub mod fs;
 pub mod git;
+pub mod image;
 pub mod launch;
 pub mod lsp;
 pub mod search;
