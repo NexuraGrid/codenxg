@@ -14,6 +14,7 @@ import { useEditorStore } from "../state/editorStore";
 import { usePinGroupStore } from "../state/pinGroupStore";
 import { FilesIcon, FolderOpenIcon, GearIcon, GitIcon, GlobeIcon, PencilIcon, SearchIcon, TerminalIcon } from "./icons";
 import { QuickOpen } from "./QuickOpen";
+import { PinGroupQuickPick, usePinQuickPickHotkeys } from "./PinGroupQuickPick";
 import { useHotkey } from "../lib/useHotkey";
 import { useFileWatcher } from "../lib/fileWatcher";
 import { useAutoSave } from "../lib/useAutoSave";
@@ -162,6 +163,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
   });
 
   useHotkey("mod+,", openSettingsTab, { capture: true });
+  usePinQuickPickHotkeys();
   // Ctrl+Shift+V: Markdown preview. Plain Ctrl+V (paste) never matches, and
   // the terminal and text fields keep their own Ctrl+Shift+V paste.
   useHotkey("mod+shift+v", toggleMarkdownPreview, {
@@ -256,6 +258,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
       </PanelGroup>
 
       <QuickOpen root={workspaceRoot} />
+      <PinGroupQuickPick />
 
       {/* Lives outside the collapsible panel so it can reopen it. */}
       <div className="float-tools">

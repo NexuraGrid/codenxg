@@ -14,6 +14,8 @@ import { ChevronIcon, PinIcon } from "./icons";
 import { FileIcon } from "./FileIcon";
 import { groupFileLabel } from "../lib/pinGroups";
 import { useMissingGroupPaths } from "./useMissingGroupPaths";
+import { quickPickShortcutLabel } from "../lib/pinGroupQuickPick";
+import { usePinQuickPickStore } from "../state/pinQuickPickStore";
 
 /** The dropdown at the left of the tab bar: switch, save, rename and delete pin groups. */
 export function PinGroupSwitcher() {
@@ -34,28 +36,31 @@ export function PinGroupSwitcher() {
   const active = groups.find((g) => g.id === activeGroupId);
 
   const entries: ContextMenuEntry[] = [
-    ...groups.flatMap((g): ContextMenuEntry[] => [
-      {
-        type: "item",
+    // Only the names here; a group's files open beside it on hover or arrow keys.
+    ...groups.map(
+      (g): ContextMenuEntry => ({
+        type: "submenu",
         label: g.name,
         detail: `${g.paths.length}`,
         checked: g.id === activeGroupId,
         onSelect: () => void switchPinGroup(g.id),
-      },
-      // Each file under its group: activates the group and focuses the file.
-      ...g.paths.map((path): ContextMenuEntry => {
-        const { name, dir } = groupFileLabel(path, root);
-        const isMissing = missing.has(path);
-        return {
-          type: "item",
-          label: isMissing ? `${name} (missing)` : name,
-          detail: dir || undefined,
-          icon: <FileIcon name={name} />,
-          indent: true,
-          onSelect: () => void openFileFromGroup(g.id, path, isMissing),
-        };
+        entries:
+          g.paths.length === 0
+            ? [{ type: "item", label: "No files yet", disabled: true, onSelect: () => {} }]
+            : g.paths.map((path): ContextMenuEntry => {
+                // Each file activates its group and focuses the file.
+                const { name, dir } = groupFileLabel(path, root);
+                const isMissing = missing.has(path);
+                return {
+                  type: "item",
+                  label: isMissing ? `${name} (missing)` : name,
+                  detail: dir || undefined,
+                  icon: <FileIcon name={name} />,
+                  onSelect: () => void openFileFromGroup(g.id, path, isMissing),
+                };
+              }),
       }),
-    ]),
+    ),
     {
       type: "item",
       label: "No Group",
@@ -65,6 +70,13 @@ export function PinGroupSwitcher() {
       onSelect: () => usePinGroupStore.getState().setActiveGroup(null),
     },
     { type: "separator" },
+    {
+      type: "item",
+      label: "Browse Pin Groups…",
+      shortcut: quickPickShortcutLabel(),
+      disabled: groups.length === 0,
+      onSelect: () => usePinQuickPickStore.getState().open(),
+    },
     {
       type: "item",
       label: "Save Pinned Tabs as Group…",

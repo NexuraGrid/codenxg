@@ -39,7 +39,7 @@ function toItem(root: string, path: string): FileItem {
   return { path, name: relative.slice(slash + 1), dir: slash === -1 ? "" : relative.slice(0, slash) };
 }
 
-function Highlighted({ text, indices }: { text: string; indices: number[] }) {
+export function Highlighted({ text, indices }: { text: string; indices: number[] }) {
   if (indices.length === 0) return <>{text}</>;
   const marked = new Set(indices);
   const parts: ReactNode[] = [];
