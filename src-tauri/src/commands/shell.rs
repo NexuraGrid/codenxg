@@ -8,13 +8,14 @@ pub enum HostOs {
     Unix,
 }
 
-#[cfg(windows)]
+/// The OS this build runs on. `cfg!` rather than two `#[cfg]` bodies, so both
+/// variants are constructed (no dead-code warning) whatever the target.
 pub fn host_os() -> HostOs {
-    HostOs::Windows
-}
-#[cfg(not(windows))]
-pub fn host_os() -> HostOs {
-    HostOs::Unix
+    if cfg!(windows) {
+        HostOs::Windows
+    } else {
+        HostOs::Unix
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
