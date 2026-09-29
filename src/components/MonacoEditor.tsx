@@ -144,7 +144,12 @@ export function MonacoEditor({ groupId }: MonacoEditorProps) {
     const previewToSide = editor.addAction({
       id: "codenxg.markdown.showPreviewToSide",
       label: "Open Preview to the Side",
-      keybindings: [monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyCode.KeyV)],
+      // Also Ctrl+K Ctrl+V: holding Ctrl through both strokes is the common
+      // slip, and Monaco would otherwise swallow it as an unknown chord.
+      keybindings: [
+        monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyCode.KeyV),
+        monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV),
+      ],
       precondition: "editorLangId == markdown",
       run: (target) => {
         const model = target.getModel();

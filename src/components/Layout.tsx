@@ -24,7 +24,8 @@ import { connectLanguageServers } from "../lib/lsp/manager";
 import { getActiveEditor } from "../lib/editorInstance";
 import { prefillFromSelection } from "../lib/searchQuery";
 import { openSettingsTab } from "../lib/settingsTab";
-import { canToggleMarkdownPreview, toggleMarkdownPreview } from "../lib/markdownPreview";
+import { canOpenMarkdownPreviewToSide, canToggleMarkdownPreview, toggleMarkdownPreview } from "../lib/markdownPreview";
+import { useMarkdownPreviewHotkeys } from "../lib/markdownPreviewHotkeys";
 import { cancelScheduledSave, flushWorkspaceTabsNow, restoreWorkspaceTabs, scheduleSaveWorkspaceTabs } from "../lib/tabPersistence";
 import { usePaletteStore } from "../state/paletteStore";
 import { useSearchStore } from "../state/searchStore";
@@ -197,6 +198,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
   useHotkey("mod+,", openSettingsTab, { capture: true });
   usePinQuickPickHotkeys();
   useEditorGroupHotkeys();
+  useMarkdownPreviewHotkeys(canOpenMarkdownPreviewToSide);
   // Ctrl+Shift+V: Markdown preview. Plain Ctrl+V (paste) never matches, and
   // the terminal and text fields keep their own Ctrl+Shift+V paste.
   useHotkey("mod+shift+v", toggleMarkdownPreview, {

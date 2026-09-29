@@ -54,6 +54,13 @@ export function toggleMarkdownPreview(): boolean {
   return true;
 }
 
+/** Whether Ctrl+K V would do something for the active tab. */
+export function canOpenMarkdownPreviewToSide(): boolean {
+  const { tabs, activeTabPath } = useEditorStore.getState();
+  const active = tabs.find((t) => t.path === activeTabPath);
+  return Boolean(active && isMarkdownSourceTab(active));
+}
+
 /** Whether Ctrl+Shift+V would do something for the active tab. */
 export function canToggleMarkdownPreview(): boolean {
   const { tabs, activeTabPath } = useEditorStore.getState();
