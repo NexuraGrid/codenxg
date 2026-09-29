@@ -6,19 +6,22 @@ import { groupFileLabel, type PinGroup } from "../lib/pinGroups";
 import {
   activeFilePath,
   addActiveFileToGroup,
+  clearGroupWithConfirm,
   deleteGroupWithConfirm,
   openFileFromGroup,
   removeFileFromGroup,
+  removeFilesFromGroupWithConfirm,
   renameGroupFromPrompt,
   switchPinGroup,
 } from "../lib/pinGroupActions";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
-import { ChevronIcon, CloseIcon, PinIcon } from "./icons";
+import { CheckIcon, ChevronIcon, CloseIcon, MinusIcon, PinIcon, TrashIcon } from "./icons";
 import { flyoutStyle, useFlyoutPlacement } from "./useFlyoutPlacement";
 import { usePinQuickPickStore } from "../state/pinQuickPickStore";
 import { useMissingGroupPaths } from "./useMissingGroupPaths";
 import { quickPickShortcutLabel } from "../lib/pinGroupQuickPick";
+import { checkedItems, emptySelection, selectAll, selectItem, toggleAll, type ListSelection, type SelectGesture } from "../lib/listSelection";
 
 const COLLAPSED_KEY = "code-editor:pin-groups-collapsed";
 
@@ -122,10 +125,19 @@ export function PinGroupsSection() {
     setFlyout((current) => (current?.groupId === groupId && current.mode === "click" ? null : { groupId, mode: "click" }));
   }
 
+  /** Keeps a hover-opened flyout from closing under the pointer once it's being worked with. */
+  function pinFlyout() {
+    window.clearTimeout(closeTimer.current);
+    setFlyout((current) => (current && current.mode === "hover" ? { ...current, mode: "click" } : current));
+  }
+
   function onRowKeyDown(event: KeyboardEvent, groupId: string) {
     if (event.key === "Enter" || event.key === " " || event.key === "ArrowRight") {
       event.preventDefault();
       setFlyout({ groupId, mode: "click" });
+    } else if (event.key === "Delete") {
+      event.preventDefault();
+      void deleteGroupWithConfirm(groupId);
     }
   }
 
@@ -205,6 +217,18 @@ export function PinGroupsSection() {
                   <PinIcon />
                   <span className="pin-section__name">{group.name}</span>
                   <span className="pin-section__actions">
+                    <button
+                      className="icon-btn"
+                      title="Delete Group…"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void deleteGroupWithConfirm(group.id);
+                      }}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                    >
+                      <TrashIcon />
+                    </button>
                     {!isActive && (
                       <button
                         className="icon-btn"
@@ -241,6 +265,7 @@ export function PinGroupsSection() {
           onPointerEnter={() => hoverEnter(null)}
           onPointerLeave={() => flyout.mode === "hover" && hoverLeave()}
           onClose={closeFlyout}
+          onPin={pinFlyout}
           onFileMenu={(e, path) => openMenu(e, { group: flyoutGroup, path })}
         />
       )}
@@ -261,12 +286,19 @@ interface GroupFlyoutProps {
   onPointerEnter: () => void;
   onPointerLeave: () => void;
   onClose: (refocusRow?: boolean) => void;
+  /** Turns a hover-opened flyout into a sticky one. */
+  onPin: () => void;
   onFileMenu: (event: MouseEvent, path: string) => void;
 }
 
 /**
  * A group's files beside its row, over the editor. Opened by a click it takes
  * focus (arrows, Enter, Escape) and stays until a click elsewhere or Escape.
+ *
+ * Files can be checked for removal from the group: checkbox or Ctrl/Cmd+click
+ * toggles, Shift+click checks a range, Space / Ctrl+A / Delete from the
+ * keyboard. Checking anything makes a hover-opened flyout sticky. Removing
+ * files (or the group) never closes or unpins their tabs.
  */
 function GroupFlyout({
   group,
@@ -280,6 +312,7 @@ function GroupFlyout({
   onPointerEnter,
   onPointerLeave,
   onClose,
+  onPin,
   onFileMenu,
 }: GroupFlyoutProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -290,6 +323,10 @@ function GroupFlyout({
     return Math.max(0, focused);
   });
   const current = Math.min(selected, Math.max(0, group.paths.length - 1));
+  const [selection, setSelection] = useState<ListSelection>(emptySelection);
+  const checked = checkedItems(group.paths, selection);
+  const selecting = checked.length > 0;
+  const allChecked = selecting && checked.length === group.paths.length;
 
   useEffect(() => {
     if (mode === "click") panelRef.current?.focus({ preventScroll: true });
@@ -303,12 +340,17 @@ function GroupFlyout({
     function onPointerDown(event: PointerEvent) {
       if (mode !== "click") return;
       const target = event.target as Element;
-      // Its own row toggles it; a context menu opened from it keeps it.
-      if (panelRef.current?.contains(target) || anchorRef.current?.contains(target) || target.closest?.(".context-menu")) return;
+      // Its own row toggles it; a context menu or confirmation opened from it keeps it.
+      if (
+        panelRef.current?.contains(target) ||
+        anchorRef.current?.contains(target) ||
+        target.closest?.(".context-menu, .dialog-backdrop")
+      )
+        return;
       onClose();
     }
     function onKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !document.querySelector(".context-menu")) onClose(mode === "click");
+      if (event.key === "Escape" && !document.querySelector(".context-menu, .dialog-backdrop")) onClose(mode === "click");
     }
     window.addEventListener("pointerdown", onPointerDown, { capture: true });
     window.addEventListener("keydown", onKeyDown);
@@ -328,9 +370,49 @@ function GroupFlyout({
     void openFileFromGroup(group.id, path, missing.has(path));
   }
 
+  function pick(index: number, gesture: SelectGesture) {
+    const path = group.paths[index];
+    if (path === undefined) return;
+    onPin();
+    setSelected(index);
+    setSelection((s) => selectItem(group.paths, s, path, gesture));
+  }
+
+  function onRowClick(event: MouseEvent, index: number) {
+    if (event.shiftKey) pick(index, "range");
+    else if (event.ctrlKey || event.metaKey || selecting) pick(index, "toggle");
+    else open(group.paths[index]);
+  }
+
+  function refocus() {
+    panelRef.current?.focus({ preventScroll: true });
+  }
+
+  /** One file goes at once; several (or clearing the group) ask first. Tabs are never touched. */
+  async function remove(paths: string[]) {
+    onPin();
+    if (await removeFilesFromGroupWithConfirm(group.id, paths)) setSelection(emptySelection);
+    refocus();
+  }
+
+  async function clearAll() {
+    onPin();
+    if (await clearGroupWithConfirm(group.id)) setSelection(emptySelection);
+    refocus();
+  }
+
+  async function deleteGroup() {
+    onPin();
+    // Once deleted, the group (and with it this flyout) is gone.
+    if (!(await deleteGroupWithConfirm(group.id))) refocus();
+  }
+
   function onKeyDown(event: KeyboardEvent) {
     const count = group.paths.length;
-    if (event.key === "ArrowDown" && count) setSelected((current + 1) % count);
+    if (event.key === " " && count) pick(current, "toggle");
+    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && count) setSelection((s) => selectAll(group.paths, s));
+    else if (event.key === "Delete" && count) void remove(selecting ? checked : [group.paths[current]]);
+    else if (event.key === "ArrowDown" && count) setSelected((current + 1) % count);
     else if (event.key === "ArrowUp" && count) setSelected((current - 1 + count) % count);
     else if (event.key === "Home" && count) setSelected(0);
     else if (event.key === "End" && count) setSelected(count - 1);
@@ -344,8 +426,9 @@ function GroupFlyout({
   return createPortal(
     <div
       ref={panelRef}
-      className="pin-flyout"
+      className={`pin-flyout${selecting ? " is-selecting" : ""}`}
       role="listbox"
+      aria-multiselectable
       aria-label={`Files in ${group.name}`}
       aria-activedescendant={mode === "click" && group.paths[current] ? `pin-flyout-${current}` : undefined}
       tabIndex={-1}
@@ -354,8 +437,39 @@ function GroupFlyout({
       onPointerLeave={onPointerLeave}
       onKeyDown={onKeyDown}
     >
-      <div className="pin-flyout__title" title={group.name}>
-        {group.name}
+      <div className="pin-flyout__header">
+        {group.paths.length > 0 && (
+          <span
+            className={`pin-check${selecting ? " is-checked" : ""}`}
+            role="checkbox"
+            aria-checked={allChecked ? true : selecting ? "mixed" : false}
+            aria-label="Select all"
+            title={allChecked ? "Deselect all" : "Select all (Ctrl+A)"}
+            onClick={() => {
+              onPin();
+              setSelection((s) => toggleAll(group.paths, s));
+            }}
+          >
+            {allChecked ? <CheckIcon /> : selecting ? <MinusIcon /> : null}
+          </span>
+        )}
+        <span className="pin-flyout__title" title={group.name}>
+          {group.name}
+        </span>
+        {selecting ? (
+          <button className="pin-flyout__action" title="Remove the selected files from the group (Delete)" onClick={() => void remove(checked)}>
+            Remove ({checked.length})
+          </button>
+        ) : (
+          group.paths.length > 0 && (
+            <button className="pin-flyout__action" title="Remove all files from the group" onClick={() => void clearAll()}>
+              Remove All
+            </button>
+          )
+        )}
+        <button className="icon-btn" title="Delete Group…" onClick={() => void deleteGroup()}>
+          <TrashIcon />
+        </button>
       </div>
       <ul ref={listRef} className="pin-section__files">
         {group.paths.length === 0 && <li className="pin-section__empty">No files yet</li>}
@@ -364,17 +478,30 @@ function GroupFlyout({
           const isMissing = missing.has(path);
           const isFocused = isActive && path === activeTabPath;
           const isSelected = mode === "click" && i === current;
+          const isChecked = selection.checked.has(path);
           return (
             <li
               key={path}
               id={`pin-flyout-${i}`}
               role="option"
-              aria-selected={isSelected}
-              className={`pin-section__row pin-section__file${isMissing ? " is-missing" : ""}${isFocused ? " is-focused" : ""}${isSelected ? " is-selected" : ""}`}
+              aria-selected={isChecked}
+              className={`pin-section__row pin-section__file${isMissing ? " is-missing" : ""}${isFocused ? " is-focused" : ""}${isSelected ? " is-selected" : ""}${isChecked ? " is-checked" : ""}`}
               title={isMissing ? `${path} (missing)` : path}
-              onClick={() => open(path)}
+              onClick={(e) => onRowClick(e, i)}
               onContextMenu={(e) => onFileMenu(e, path)}
             >
+              <span
+                className={`pin-check${isChecked ? " is-checked" : ""}`}
+                role="checkbox"
+                aria-checked={isChecked}
+                aria-label={`Select ${name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  pick(i, e.shiftKey ? "range" : "toggle");
+                }}
+              >
+                {isChecked && <CheckIcon />}
+              </span>
               <FileIcon name={name} />
               <span className="pin-section__name">{name}</span>
               {dir && <span className="pin-section__dir">{dir}</span>}

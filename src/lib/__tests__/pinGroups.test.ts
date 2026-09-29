@@ -6,11 +6,15 @@ import { groupFileLabel, planGroupSwitch, sanitizePinGroups, type PinGroup } fro
 import {
   addActiveFileToGroup,
   addFileToGroup,
+  clearGroupWithConfirm,
+  deleteGroupWithConfirm,
   openFileFromGroup,
   openGroupFile,
   removeFileFromGroup,
+  removeFilesFromGroupWithConfirm,
   switchPinGroup,
 } from "../pinGroupActions";
+import { closeTabs } from "../tabActions";
 import { buildWorkspaceRecord, readPinGroups, type WorkspaceTabsRecord } from "../persistedTabs";
 
 function tab(path: string, overrides: Partial<EditorTab> = {}): EditorTab {
@@ -277,5 +281,120 @@ describe("pin group persistence", () => {
     expect(sanitizePinGroups(junk)).toEqual([{ id: "g2", name: "Ok", paths: ["/a"] }]);
     const record = { tabs: [], activeTabPath: null, lastAccessed: 1, pinGroups: junk, activePinGroup: "g1" } as unknown as WorkspaceTabsRecord;
     expect(readPinGroups(record).activeGroupId).toBeNull();
+  });
+});
+
+describe("group membership is independent of tabs", () => {
+  it("keeps a file in its group when its tab is unpinned or closed", async () => {
+    const group = pins().createGroup("G")!;
+    editor().addTab(tab("/a"));
+    editor().addTab(tab("/b"));
+    addFileToGroup(group.id, "/a");
+    addFileToGroup(group.id, "/b");
+
+    editor().setPinned("/a", false);
+    await closeTabs(["/b"]);
+
+    expect(editor().tabs.map((t) => [t.path, t.isPinned])).toEqual([["/a", false]]);
+    expect(pins().groups[0].paths).toEqual(["/a", "/b"]);
+  });
+
+  it("keeps the previous group's files when a switch closes their tabs", async () => {
+    const a = pins().createGroup("A", ["/a"])!;
+    const b = pins().createGroup("B", ["/b"])!;
+    await switchPinGroup(a.id, everything);
+    await switchPinGroup(b.id, everything);
+    expect(openPaths()).toEqual(["/b"]);
+    expect(pins().groups.map((g) => g.paths)).toEqual([["/a"], ["/b"]]);
+  });
+});
+
+describe("removing files from a group", () => {
+  const dialog = () => useDialogStore.getState();
+
+  it("removes several files at once in the store, ignoring unknown ones", () => {
+    const group = pins().createGroup("G", ["/a", "/b", "/c"])!;
+    pins().removeFilesFromGroup(group.id, ["/a", "/c", "/zzz"]);
+    expect(pins().groups[0].paths).toEqual(["/b"]);
+  });
+
+  it("removes a single file without asking", async () => {
+    const group = pins().createGroup("G", ["/a", "/b"])!;
+    expect(await removeFilesFromGroupWithConfirm(group.id, ["/a"])).toBe(true);
+    expect(dialog().current).toBeNull();
+    expect(pins().groups[0].paths).toEqual(["/b"]);
+  });
+
+  it("confirms before removing several files, leaving their tabs open and pinned", async () => {
+    const group = pins().createGroup("G", ["/a", "/b", "/c"])!;
+    editor().addTab(tab("/a", { isPinned: true }));
+    editor().addTab(tab("/b", { isPinned: true }));
+
+    const pending = removeFilesFromGroupWithConfirm(group.id, ["/a", "/b"]);
+    expect(dialog().current?.request.title).toBe('Remove 2 files from "G"?');
+    dialog().close("confirm");
+
+    expect(await pending).toBe(true);
+    expect(pins().groups[0].paths).toEqual(["/c"]);
+    expect(editor().tabs.map((t) => [t.path, t.isPinned])).toEqual([
+      ["/a", true],
+      ["/b", true],
+    ]);
+  });
+
+  it("keeps the files when removal is cancelled", async () => {
+    const group = pins().createGroup("G", ["/a", "/b"])!;
+    const pending = removeFilesFromGroupWithConfirm(group.id, ["/a", "/b"]);
+    dialog().close("cancel");
+    expect(await pending).toBe(false);
+    expect(pins().groups[0].paths).toEqual(["/a", "/b"]);
+  });
+
+  it("clears a group after confirming, keeping the group and its tabs", async () => {
+    const group = pins().createGroup("G", ["/a", "/b"])!;
+    pins().setActiveGroup(group.id);
+    editor().addTab(tab("/a", { isPinned: true }));
+
+    const pending = clearGroupWithConfirm(group.id);
+    expect(dialog().current?.request.title).toBe('Remove all 2 files from "G"?');
+    dialog().close("confirm");
+
+    expect(await pending).toBe(true);
+    expect(pins().groups).toEqual([{ id: group.id, name: "G", paths: [] }]);
+    expect(pins().activeGroupId).toBe(group.id);
+    expect(openPaths()).toEqual(["/a"]);
+  });
+
+  it("has nothing to clear in an empty group", async () => {
+    const group = pins().createGroup("G")!;
+    expect(await clearGroupWithConfirm(group.id)).toBe(false);
+    expect(dialog().current).toBeNull();
+  });
+});
+
+describe("deleting a group", () => {
+  it("names the group and its file count, then leaves tabs open and no group active", async () => {
+    const group = pins().createGroup("Backend", ["/a", "/b"])!;
+    await switchPinGroup(group.id, everything);
+
+    const pending = deleteGroupWithConfirm(group.id);
+    expect(useDialogStore.getState().current?.request.title).toBe('Delete the pin group "Backend" (2 files)?');
+    useDialogStore.getState().close("confirm");
+
+    expect(await pending).toBe(true);
+    expect(pins().groups).toEqual([]);
+    expect(pins().activeGroupId).toBeNull();
+    expect(editor().tabs.map((t) => [t.path, t.isPinned])).toEqual([
+      ["/a", true],
+      ["/b", true],
+    ]);
+  });
+
+  it("keeps the group when deletion is cancelled", async () => {
+    const group = pins().createGroup("G", ["/a"])!;
+    const pending = deleteGroupWithConfirm(group.id);
+    useDialogStore.getState().close("cancel");
+    expect(await pending).toBe(false);
+    expect(pins().groups).toHaveLength(1);
   });
 });

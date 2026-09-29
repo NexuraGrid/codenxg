@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { getActiveEditor } from "../lib/editorInstance";
-import { openFileFromGroup } from "../lib/pinGroupActions";
+import { openFileFromGroup, removeFileFromGroup } from "../lib/pinGroupActions";
 import {
   backToGroups,
   enterGroup,
@@ -19,7 +19,7 @@ import { useEditorStore } from "../state/editorStore";
 import { usePinGroupStore } from "../state/pinGroupStore";
 import { usePinQuickPickStore } from "../state/pinQuickPickStore";
 import { FileIcon } from "./FileIcon";
-import { PinIcon } from "./icons";
+import { CloseIcon, PinIcon } from "./icons";
 import { Highlighted } from "./QuickOpen";
 import { useMissingGroupPaths } from "./useMissingGroupPaths";
 
@@ -161,6 +161,18 @@ function PinGroupQuickPickPanel() {
                     <Highlighted text={item.dir} indices={item.dirIndices} />
                   </span>
                   {dirty.has(item.path) && <span className="palette__dirty" title="Unsaved changes">●</span>}
+                  <button
+                    className="icon-btn palette__remove"
+                    title="Remove from Group"
+                    tabIndex={-1}
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFileFromGroup(group.id, item.path);
+                    }}
+                  >
+                    <CloseIcon />
+                  </button>
                 </li>
               );
             })}

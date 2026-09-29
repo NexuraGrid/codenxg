@@ -83,20 +83,70 @@ export async function renameGroupFromPrompt(groupId: string): Promise<void> {
   }
 }
 
-/** Deletes a group after confirming; its files and tabs are left alone. */
-export async function deleteGroupWithConfirm(groupId: string): Promise<void> {
-  const group = usePinGroupStore.getState().groups.find((g) => g.id === groupId);
-  if (!group) return;
+function fileCount(count: number): string {
+  return count === 1 ? "1 file" : `${count} files`;
+}
+
+async function confirmDanger(title: string, message: string, label: string): Promise<boolean> {
   const choice = await showDialog({
-    title: `Delete the pin group "${group.name}"?`,
-    message: "Its files and open tabs are not affected.",
+    title,
+    message,
     buttons: [
-      { label: "Delete", value: "delete", variant: "danger" },
+      { label, value: "confirm", variant: "danger" },
       { label: "Cancel", value: "cancel" },
     ],
     cancelValue: "cancel",
   });
-  if (choice === "delete") usePinGroupStore.getState().deleteGroup(groupId);
+  return choice === "confirm";
+}
+
+/**
+ * Deletes a group after confirming; its files and open tabs are left alone.
+ * If it was the active group, no group is active afterwards.
+ */
+export async function deleteGroupWithConfirm(groupId: string): Promise<boolean> {
+  const group = usePinGroupStore.getState().groups.find((g) => g.id === groupId);
+  if (!group) return false;
+  const confirmed = await confirmDanger(
+    `Delete the pin group "${group.name}" (${fileCount(group.paths.length)})?`,
+    "Its files and open tabs are not affected.",
+    "Delete",
+  );
+  if (confirmed) usePinGroupStore.getState().deleteGroup(groupId);
+  return confirmed;
+}
+
+/**
+ * Takes `paths` out of a group — one at once, several after confirming. Open
+ * tabs stay open and keep their pin state. True when something was removed.
+ */
+export async function removeFilesFromGroupWithConfirm(groupId: string, paths: string[]): Promise<boolean> {
+  const group = usePinGroupStore.getState().groups.find((g) => g.id === groupId);
+  const removing = group ? paths.filter((p) => group.paths.includes(p)) : [];
+  if (!group || removing.length === 0) return false;
+  if (removing.length > 1) {
+    const confirmed = await confirmDanger(
+      `Remove ${fileCount(removing.length)} from "${group.name}"?`,
+      "The files and their open tabs are not affected.",
+      "Remove",
+    );
+    if (!confirmed) return false;
+  }
+  usePinGroupStore.getState().removeFilesFromGroup(groupId, removing);
+  return true;
+}
+
+/** Empties a group after confirming; the group itself and open tabs stay. */
+export async function clearGroupWithConfirm(groupId: string): Promise<boolean> {
+  const group = usePinGroupStore.getState().groups.find((g) => g.id === groupId);
+  if (!group || group.paths.length === 0) return false;
+  const confirmed = await confirmDanger(
+    `Remove all ${fileCount(group.paths.length)} from "${group.name}"?`,
+    "The group is kept, empty. The files and their open tabs are not affected.",
+    "Remove All",
+  );
+  if (confirmed) usePinGroupStore.getState().clearGroup(groupId);
+  return confirmed;
 }
 
 /** What happened when a group's file was clicked. */

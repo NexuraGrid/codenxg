@@ -20,6 +20,10 @@ interface PinGroupState {
   deleteGroup: (id: string) => void;
   addFile: (id: string, path: string) => void;
   removeFile: (id: string, path: string) => void;
+  /** Takes `paths` out of a group; open tabs and their pin state are untouched. */
+  removeFilesFromGroup: (id: string, paths: string[]) => void;
+  /** Empties a group, keeping the group itself. */
+  clearGroup: (id: string) => void;
   setActiveGroup: (id: string | null) => void;
 }
 
@@ -75,10 +79,17 @@ export const usePinGroupStore = create<PinGroupState>((set, get) => ({
   addFile: (id, path) =>
     set((state) => ({ groups: state.groups.map((g) => (g.id === id ? withPaths(g, [path]) : g)) })),
 
-  removeFile: (id, path) =>
+  removeFile: (id, path) => get().removeFilesFromGroup(id, [path]),
+
+  removeFilesFromGroup: (id, paths) => {
+    const removing = new Set(paths);
     set((state) => ({
-      groups: state.groups.map((g) => (g.id === id ? { ...g, paths: g.paths.filter((p) => p !== path) } : g)),
-    })),
+      groups: state.groups.map((g) => (g.id === id ? { ...g, paths: g.paths.filter((p) => !removing.has(p)) } : g)),
+    }));
+  },
+
+  clearGroup: (id) =>
+    set((state) => ({ groups: state.groups.map((g) => (g.id === id ? { ...g, paths: [] } : g)) })),
 
   setActiveGroup: (id) => set({ activeGroupId: id }),
 }));
