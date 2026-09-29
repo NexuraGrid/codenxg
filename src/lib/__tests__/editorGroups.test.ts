@@ -4,6 +4,7 @@ import { useDialogStore } from "../../state/dialogStore";
 import { usePinGroupStore } from "../../state/pinGroupStore";
 import { closeTabs, openPreviewTab } from "../tabActions";
 import { closeGroup, focusGroupAt, moveEditorToGroup, moveEditorToOtherGroup, splitEditor } from "../editorGroupActions";
+import { openMarkdownPreviewToSide } from "../markdownPreview";
 import { switchPinGroup } from "../pinGroupActions";
 import {
   buildLayoutRecord,
@@ -221,6 +222,28 @@ describe("file-level changes span groups", () => {
     store().rebasePaths("/x", "/y");
     expect(groupPaths()).toEqual([["/y/a.ts"], ["/y/a.ts"]]);
     expect(store().groups.every((g) => g.activeTabPath === "/y/a.ts")).toBe(true);
+  });
+});
+
+describe("markdown preview to the side", () => {
+  it("opens in a new right group and keeps focus on the source", () => {
+    store().addTab(tab("/doc.md", { language: "markdown" }));
+    openMarkdownPreviewToSide("/doc.md");
+    expect(groupPaths()).toEqual([["/doc.md"], ["markdown-preview:/doc.md"]]);
+    expect(activeIndex()).toBe(0);
+    expect(store().activeTabPath).toBe("/doc.md");
+
+    openMarkdownPreviewToSide("/doc.md");
+    expect(groupPaths()).toEqual([["/doc.md"], ["markdown-preview:/doc.md"]]);
+  });
+
+  it("from the right group, uses the left one", () => {
+    store().addTab(tab("/a"));
+    splitEditor();
+    store().addTab(tab("/doc.md", { language: "markdown" }));
+    openMarkdownPreviewToSide("/doc.md");
+    expect(groupPaths()).toEqual([["/a", "markdown-preview:/doc.md"], ["/a", "/doc.md"]]);
+    expect(activeIndex()).toBe(1);
   });
 });
 

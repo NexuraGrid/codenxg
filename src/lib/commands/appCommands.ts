@@ -13,7 +13,7 @@ import { openSettingsTab } from "../settingsTab";
 import {
   canToggleMarkdownPreview,
   isMarkdownSourceTab,
-  openMarkdownPreview,
+  openMarkdownPreviewToSide,
   toggleMarkdownPreview,
 } from "../markdownPreview";
 import { closeGroup, focusGroupAt, moveEditorToGroup, moveEditorToOtherGroup, splitEditor } from "../editorGroupActions";
@@ -347,7 +347,7 @@ export function appCommands(): Command[] {
       },
       run: () => {
         const tab = activeTab();
-        if (tab) openMarkdownPreview(tab.path);
+        if (tab) openMarkdownPreviewToSide(tab.path);
       },
     },
 

@@ -1,7 +1,7 @@
 import { useCallback, useState, type MouseEvent } from "react";
 import { MAX_EDITOR_GROUPS, useEditorStore, type EditorTab } from "../state/editorStore";
 import { closeTabs, pathsToClose, type TabCloseAction } from "../lib/tabActions";
-import { isMarkdownSourceTab, openMarkdownPreview } from "../lib/markdownPreview";
+import { isMarkdownSourceTab, openMarkdownPreview, openMarkdownPreviewToSide } from "../lib/markdownPreview";
 import { moveEditorToOtherGroup, splitEditor } from "../lib/editorGroupActions";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
@@ -93,7 +93,11 @@ export function EditorTabs({ groupId, showPinGroupSwitcher, showWindowControls }
     const isPinned = Boolean(tabs[index]?.isPinned);
     const preview: ContextMenuEntry[] =
       tabs[index] && isMarkdownSourceTab(tabs[index])
-        ? [{ type: "item", label: "Open Preview", onSelect: () => openMarkdownPreview(target) }, { type: "separator" }]
+        ? [
+            { type: "item", label: "Open Preview", onSelect: () => openMarkdownPreview(target) },
+            { type: "item", label: "Open Preview to the Side", onSelect: () => openMarkdownPreviewToSide(target) },
+            { type: "separator" },
+          ]
         : [];
     return [
       ...preview,

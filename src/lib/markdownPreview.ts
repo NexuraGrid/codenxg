@@ -1,5 +1,6 @@
 import { MARKDOWN_PREVIEW_PREFIX, useEditorStore, type EditorTab } from "../state/editorStore";
 import { basename } from "./paths";
+import { openToSide } from "./editorGroupActions";
 
 /** Files the preview (Ctrl+Shift+V / Ctrl+K V) applies to. */
 export function isMarkdownPath(path: string): boolean {
@@ -24,6 +25,15 @@ export function markdownPreviewTab(source: string): EditorTab {
 /** Opens (or focuses) the rendered preview of `source`. */
 export function openMarkdownPreview(source: string): void {
   useEditorStore.getState().addTab(markdownPreviewTab(source));
+}
+
+/**
+ * Ctrl+K V: opens the rendered preview of `source` in the group to the side
+ * (creating it), leaving focus on the Markdown source so typing goes on and
+ * the preview follows live.
+ */
+export function openMarkdownPreviewToSide(source: string): void {
+  openToSide(markdownPreviewTab(source));
 }
 
 /**

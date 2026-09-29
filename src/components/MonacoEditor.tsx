@@ -19,7 +19,7 @@ import { CommitDiffView } from "./CommitDiffView";
 import { StashDiffView } from "./StashDiffView";
 import { SettingsView } from "./SettingsView";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { openMarkdownPreview } from "../lib/markdownPreview";
+import { openMarkdownPreviewToSide } from "../lib/markdownPreview";
 
 interface MonacoEditorProps {
   /** The editor group whose active tab this shows. */
@@ -138,9 +138,9 @@ export function MonacoEditor({ groupId }: MonacoEditorProps) {
     disableMonacoQuickCommand(monaco);
     // Clicking or tabbing into this editor focuses its group.
     editor.onDidFocusEditorText(() => useEditorStore.getState().focusGroup(groupId));
-    // Ctrl+K V: VS Code's "open preview to the side"; for now it opens the
-    // preview as a tab, like Ctrl+Shift+V. An action, not addCommand: those
-    // are global in Monaco (the last editor's would win).
+    // Ctrl+K V: VS Code's "open preview to the side" — the preview opens in
+    // the group to the side while focus stays here. An action, not
+    // addCommand: those are global in Monaco (the last editor's would win).
     const previewToSide = editor.addAction({
       id: "codenxg.markdown.showPreviewToSide",
       label: "Open Preview to the Side",
@@ -149,7 +149,7 @@ export function MonacoEditor({ groupId }: MonacoEditorProps) {
       run: (target) => {
         const model = target.getModel();
         const path = model ? pathOfModel(model) : undefined;
-        if (path) openMarkdownPreview(path);
+        if (path) openMarkdownPreviewToSide(path);
       },
     });
     const detachGutter = attachGitGutter(editor);
