@@ -784,6 +784,34 @@ body.is-dragging-entry * {
   white-space: pre-line;
 }
 
+.dialog__progress {
+  position: relative;
+  height: 3px;
+  margin-top: 14px;
+  overflow: hidden;
+  background: #262626;
+  border-radius: 2px;
+}
+
+.dialog__progress::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: dialog-progress 1.2s ease-in-out infinite;
+}
+
+@keyframes dialog-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
 .dialog__actions {
   display: flex;
   justify-content: flex-end;

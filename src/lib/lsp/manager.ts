@@ -41,9 +41,10 @@ import {
 import { ensureModelsForLocations, releaseUnusedLoanedModels } from "./referenceModels";
 import { toRenameLocation } from "./rename";
 import type { ResourceOperation } from "./workspaceEdit";
-import { lspSend, lspStart, lspStop } from "../tauri-api";
+import { lspInstall, lspSend, lspStart, lspStop } from "../tauri-api";
 import { basename, pathFromUri } from "../paths";
-import { showDialog } from "../../state/dialogStore";
+import { showDialog, useDialogStore, type DialogRequest } from "../../state/dialogStore";
+import { parseStartFailure } from "./startFailure";
 
 /** Monaco language ids served by an external language server. */
 const SERVED_LANGUAGES = ["php", "python", "java", "go"];
@@ -83,6 +84,8 @@ class LanguageSession {
     readonly language: string,
     private readonly root: string,
     private readonly onStopped: (session: LanguageSession) => void,
+    /** Starts over (new session, open files re-sent) — after a one-click install. */
+    private readonly restart: () => void,
   ) {
     this.ready = this.start();
   }
@@ -96,7 +99,7 @@ class LanguageSession {
     try {
       await lspStart(this.language, (json) => this.client.receive(json));
     } catch (error) {
-      void explainStartFailure(this.language, String(error));
+      void explainStartFailure(this.language, String(error), this.restart);
       return false;
     }
 
@@ -561,26 +564,86 @@ async function warnAboutSkippedOperations(operations: ResourceOperation[]): Prom
   });
 }
 
-async function explainStartFailure(language: string, error: string) {
+async function explainStartFailure(language: string, error: string, restart: () => void) {
   // Once per language per session: not having a server is a choice, not an emergency.
   if (noticesShown.has(language)) return;
   noticesShown.add(language);
-  const hint = error.match(/not-installed:(.*)$/)?.[1];
-  if (!hint) {
+  const missing = parseStartFailure(error);
+  if (!missing) {
     console.error(`[lsp ${language}]`, error);
     return;
   }
-  const command = hint.split("   ")[0];
+  const title = `Smart completion for ${language} needs a language server`;
+  if (!missing.installable) {
+    const choice = await showDialog({
+      title,
+      message: `Install it from a terminal, then reopen the file:\n\n${missing.hint}`,
+      buttons: [
+        { label: "Copy command", value: "copy", variant: "primary" },
+        { label: "Not now", value: "later" },
+      ],
+      cancelValue: "later",
+    });
+    if (choice === "copy") await copyCommand(missing.command);
+    return;
+  }
+
   const choice = await showDialog({
-    title: `Smart completion for ${language} needs a language server`,
-    message: `Install it from a terminal, then reopen the file:\n\n${hint}`,
+    title,
+    message: `Install it now? This runs:\n\n${missing.command}`,
     buttons: [
-      { label: "Copy command", value: "copy", variant: "primary" },
-      { label: "Not now", value: "later" },
+      { label: "Install", value: "install", variant: "primary" },
+      { label: "Copy command", value: "copy" },
+      { label: "Cancel", value: "cancel" },
     ],
-    cancelValue: "later",
+    cancelValue: "cancel",
   });
-  if (choice === "copy") await writeText(command).catch(console.error);
+  if (choice === "copy") await copyCommand(missing.command);
+  if (choice === "install") await installServer(language, missing.command, restart);
+}
+
+async function copyCommand(command: string): Promise<void> {
+  await writeText(command).catch(console.error);
+}
+
+/** Runs the one-click install; on success the server starts for the open files. */
+async function installServer(language: string, command: string, restart: () => void): Promise<void> {
+  // "Hide" only dismisses the dialog: the install keeps running.
+  const progress: DialogRequest<"hide"> = {
+    title: `Installing the ${language} language server…`,
+    message: `Running: ${command}`,
+    buttons: [{ label: "Hide", value: "hide" }],
+    cancelValue: "hide",
+    busy: true,
+  };
+  void showDialog(progress);
+
+  try {
+    await lspInstall(language);
+  } catch (error) {
+    const reason = String(error);
+    const choice = await showDialog({
+      title: reason === "npm-missing" ? "Node.js and npm are required" : `Couldn't install the ${language} language server`,
+      message:
+        reason === "npm-missing"
+          ? `The ${language} language server is installed with npm, which comes with Node.js (nodejs.org). Once Node.js is installed, run:\n\n${command}`
+          : `${reason}\n\nYou can run it yourself from a terminal:\n\n${command}`,
+      buttons: [
+        { label: "Copy command", value: "copy", variant: "primary" },
+        { label: "Close", value: "close" },
+      ],
+      cancelValue: "close",
+    });
+    if (choice === "copy") await copyCommand(command);
+    return;
+  }
+
+  const { current, close } = useDialogStore.getState();
+  if (current?.request === progress) close("hide");
+  // A still-missing server after this (e.g. npm's global bin isn't where we
+  // look) should be explained again rather than fail silently.
+  noticesShown.delete(language);
+  restart();
 }
 
 /**
@@ -590,15 +653,21 @@ async function explainStartFailure(language: string, error: string) {
  */
 export function connectLanguageServers(root: string): () => void {
   const sessions = new Map<string, LanguageSession>();
+  let disconnected = false;
 
   function sessionFor(language: string): LanguageSession | undefined {
     if (!SERVED_LANGUAGES.includes(language)) return undefined;
     let session = sessions.get(language);
     if (!session) {
-      session = new LanguageSession(language, root, (stopped) => {
-        // A newer session for the language may already have replaced it.
-        if (sessions.get(language) === stopped) sessions.delete(language);
-      });
+      session = new LanguageSession(
+        language,
+        root,
+        (stopped) => {
+          // A newer session for the language may already have replaced it.
+          if (sessions.get(language) === stopped) sessions.delete(language);
+        },
+        () => restart(language),
+      );
       sessions.set(language, session);
     }
     return session;
@@ -609,6 +678,15 @@ export function connectLanguageServers(root: string): () => void {
     if (model.uri.scheme !== "file") return;
     const session = sessionFor(model.getLanguageId());
     session?.ready.then((ok) => ok && !model.isDisposed() && session.open(model));
+  }
+
+  // Drops the (failed) session and starts a fresh one for the files already open.
+  function restart(language: string) {
+    if (disconnected) return;
+    sessions.get(language)?.stop();
+    for (const model of monaco.editor.getModels()) {
+      if (!model.isDisposed() && model.getLanguageId() === language) track(model);
+    }
   }
 
   function untrack(model: monaco.editor.ITextModel, language = model.getLanguageId()) {
@@ -630,6 +708,7 @@ export function connectLanguageServers(root: string): () => void {
   for (const model of monaco.editor.getModels()) track(model);
 
   return () => {
+    disconnected = true;
     savedListeners.delete(onSaved);
     for (const subscription of subscriptions) subscription.dispose();
     for (const session of [...sessions.values()]) session.stop();

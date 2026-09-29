@@ -16,7 +16,7 @@ use commands::git::{
 };
 use commands::cli_install::install_cli;
 use commands::launch::{folder_from_args, launch_folder};
-use commands::lsp::{lsp_send, lsp_start, lsp_stop, LspRegistry};
+use commands::lsp::{lsp_install, lsp_send, lsp_start, lsp_stop, LspRegistry};
 use commands::search::{search_in_workspace, write_search_files};
 use commands::settings::{read_settings, read_workspaces_state, write_settings, write_workspaces_state};
 use commands::terminal::{close_terminal, create_terminal, resize_terminal, write_to_terminal};
@@ -79,6 +79,7 @@ pub fn run() {
             git_stash_files,
             git_stash_file_diff,
             lsp_start,
+            lsp_install,
             lsp_send,
             lsp_stop,
             read_dir,

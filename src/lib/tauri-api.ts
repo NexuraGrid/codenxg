@@ -340,6 +340,14 @@ export function lspStart(language: string, onMessage: (json: string) => void): P
   return invoke("lsp_start", { language, onMessage: channel });
 }
 
+/**
+ * Installs the language server for `language` with its fixed npm command.
+ * Rejects with "npm-missing", "not-installable", or npm's error output.
+ */
+export function lspInstall(language: string): Promise<void> {
+  return invoke("lsp_install", { language });
+}
+
 export function lspSend(language: string, message: string): Promise<void> {
   return invoke("lsp_send", { language, message });
 }

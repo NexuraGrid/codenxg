@@ -48,6 +48,7 @@ export function DialogHost() {
           {request.title}
         </h2>
         {request.message && <p className="dialog__message">{request.message}</p>}
+        {request.busy && <div className="dialog__progress" role="progressbar" aria-label="In progress" />}
         <div className="dialog__actions">
           {request.buttons.map((button) => (
             <button

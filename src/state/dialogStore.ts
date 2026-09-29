@@ -13,6 +13,8 @@ export interface DialogRequest<T extends string> {
   buttons: DialogButton<T>[];
   /** Returned on Escape or a click on the backdrop. */
   cancelValue: T;
+  /** Shows an indeterminate progress bar: something is still running. */
+  busy?: boolean;
 }
 
 interface OpenDialog {

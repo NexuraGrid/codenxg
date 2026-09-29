@@ -26,13 +26,34 @@ const SERVERS: &[(&str, &[(&str, &[&str])])] = &[
     ("go", &[("gopls", &[])]),
 ];
 
-/// Shown when nothing is installed for a language.
+/// What `lsp_install` may run, per language: always `npm install -g <package>`.
+/// The webview only ever names a language; the command comes from here.
+const NPM_INSTALLS: &[(&str, &str)] = &[("php", "intelephense"), ("python", "pyright")];
+
+/// Shown when nothing is installed for a language that can't be installed with
+/// one click (the npm ones get their hint from NPM_INSTALLS).
 const INSTALL_HINTS: &[(&str, &str)] = &[
-    ("php", "npm install -g intelephense"),
-    ("python", "npm install -g pyright"),
     ("java", "brew install jdtls   (needs Java 21+)"),
     ("go", "brew install gopls   (or: go install golang.org/x/tools/gopls@latest)"),
 ];
+
+/// Program and arguments `lsp_install` runs for `language`, if it's allowed.
+fn install_command(language: &str) -> Option<(&'static str, [&'static str; 3])> {
+    NPM_INSTALLS
+        .iter()
+        .find(|(id, _)| *id == language)
+        .map(|(_, package)| ("npm", ["install", "-g", package]))
+}
+
+/// The `not-installed:` error lsp_start returns; `installable:` marks the
+/// languages lsp_install can handle, so the webview can offer the button.
+fn not_installed_error(language: &str) -> String {
+    if let Some((program, args)) = install_command(language) {
+        return format!("not-installed:installable:{program} {}", args.join(" "));
+    }
+    let hint = INSTALL_HINTS.iter().find(|(id, _)| *id == language).map_or("", |(_, h)| h);
+    format!("not-installed:{hint}")
+}
 
 // Sent to the webview when the server process ends, so it can stop waiting.
 const EXITED_NOTIFICATION: &str = r#"{"jsonrpc":"2.0","method":"$/codenxg/serverExited"}"#;
@@ -83,8 +104,7 @@ pub fn lsp_start(
             .find_map(|(name, args)| resolve_binary(name).map(|binary| (*name, binary.to_string_lossy().into_owned(), false, *args))),
     };
     let Some((name, binary, is_shim, args)) = resolved else {
-        let hint = INSTALL_HINTS.iter().find(|(id, _)| *id == language).map_or("", |(_, h)| h);
-        return Err(format!("not-installed:{hint}"));
+        return Err(not_installed_error(&language));
     };
 
     stop(&registry, &language);
@@ -136,6 +156,54 @@ pub fn lsp_start(
     });
 
     Ok(name.to_string())
+}
+
+/// Installs the language server for `language` with its fixed, allow-listed
+/// npm command (see NPM_INSTALLS). Errors are readable text, except
+/// `npm-missing` (no npm found) and `not-installable` (not on the list).
+#[tauri::command(async)]
+pub fn lsp_install(language: String) -> Result<(), String> {
+    let (program, args) = install_command(&language).ok_or("not-installable")?;
+
+    let (binary, is_shim) = match host_os() {
+        HostOs::Windows => {
+            let path_var = std::env::var("PATH").unwrap_or_default();
+            resolve_binary_windows(program, &path_var, &|p| Path::new(p).is_file()).ok_or("npm-missing")?
+        }
+        HostOs::Unix => (resolve_binary(program).ok_or("npm-missing")?.to_string_lossy().into_owned(), false),
+    };
+    let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+    let (program_path, full_args) = command_for_binary(&binary, is_shim, &comspec, &args);
+
+    let mut command = Command::new(&program_path);
+    crate::appimage::clean_command(&mut command);
+    #[cfg(windows)]
+    {
+        // `cmd /C npm.cmd` would otherwise flash a console window.
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    // npm is a `#!/usr/bin/env node` script: node must be on the child's PATH.
+    let output = command
+        .args(&full_args)
+        .env("PATH", path_with(Path::new(&binary)))
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("Couldn't run npm: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let mut log = String::from_utf8_lossy(&output.stderr).into_owned();
+    if log.trim().is_empty() {
+        log = String::from_utf8_lossy(&output.stdout).into_owned();
+    }
+    Err(format!("npm {} failed ({}):\n{}", args.join(" "), output.status, tail(&log, 12)))
+}
+
+/// The last `lines` non-empty lines of `text` — npm's useful error is at the end.
+fn tail(text: &str, lines: usize) -> String {
+    let kept: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    kept[kept.len().saturating_sub(lines)..].join("\n")
 }
 
 #[tauri::command(async)]
@@ -344,7 +412,10 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{command_for_binary, find_in_path, read_message, resolve_binary, resolve_binary_windows, write_message, SERVERS};
+    use super::{
+        command_for_binary, find_in_path, install_command, not_installed_error, read_message, resolve_binary, resolve_binary_windows,
+        tail, write_message, SERVERS,
+    };
     use std::io::{BufReader, Cursor};
 
     #[test]
@@ -382,8 +453,34 @@ mod tests {
     #[test]
     fn every_language_has_an_install_hint() {
         for (language, _) in SERVERS {
-            assert!(super::INSTALL_HINTS.iter().any(|(id, _)| id == language), "{language}");
+            let error = not_installed_error(language);
+            assert!(error.len() > "not-installed:".len(), "{language}: {error}");
         }
+    }
+
+    #[test]
+    fn install_command_is_a_fixed_npm_global_install() {
+        assert_eq!(install_command("php"), Some(("npm", ["install", "-g", "intelephense"])));
+        assert_eq!(install_command("python"), Some(("npm", ["install", "-g", "pyright"])));
+    }
+
+    #[test]
+    fn install_command_rejects_anything_not_allow_listed() {
+        for language in ["java", "go", "rust", "", "php; rm -rf /", "npm install -g evil"] {
+            assert_eq!(install_command(language), None, "{language}");
+        }
+    }
+
+    #[test]
+    fn not_installed_error_marks_only_installable_languages() {
+        assert_eq!(not_installed_error("php"), "not-installed:installable:npm install -g intelephense");
+        assert!(not_installed_error("go").starts_with("not-installed:brew install gopls"));
+    }
+
+    #[test]
+    fn tail_keeps_the_last_non_empty_lines() {
+        assert_eq!(tail("a\n\nb\nc\n\n", 2), "b\nc");
+        assert_eq!(tail("only", 5), "only");
     }
 
     // End to end against a real server when one is installed (skipped otherwise).
