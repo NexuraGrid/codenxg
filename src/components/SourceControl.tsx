@@ -1,6 +1,6 @@
 import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useGitStore, decorationOf, type FileDecoration } from "../state/gitStore";
-import { useEditorStore } from "../state/editorStore";
+import { openPreviewTab } from "../lib/tabActions";
 import { gitStashFiles, type GitChange, type GitCommitFile, type GitStash } from "../lib/tauri-api";
 import { basename, dirname } from "../lib/paths";
 import { languageFromPath } from "../lib/language";
@@ -39,11 +39,11 @@ const LETTER_TITLES: Record<FileDecoration, string> = {
 };
 
 function openChange(path: string, showDiff: boolean) {
-  useEditorStore.getState().addTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path), showDiff });
+  openPreviewTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path), showDiff });
 }
 
 function openStashFile(stash: GitStash, file: GitCommitFile) {
-  useEditorStore.getState().addTab({
+  openPreviewTab({
     path: `stash:${stash.index}:${file.path}`,
     title: basename(file.path),
     isDirty: false,

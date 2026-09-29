@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useGitStore } from "../state/gitStore";
-import { useEditorStore } from "../state/editorStore";
+import { openPreviewTab } from "../lib/tabActions";
 import { gitCommitFiles, type GitCommit, type GitCommitFile } from "../lib/tauri-api";
 import { basename, dirname } from "../lib/paths";
 import { languageFromPath } from "../lib/language";
@@ -9,7 +9,7 @@ import { FileIcon } from "./FileIcon";
 import { ChevronIcon } from "./icons";
 
 function openCommitFile(commit: GitCommit, file: GitCommitFile) {
-  useEditorStore.getState().addTab({
+  openPreviewTab({
     path: `commit:${commit.hash}:${file.path}`,
     title: basename(file.path),
     isDirty: false,

@@ -3,7 +3,7 @@ import { useEditorStore } from "../state/editorStore";
 import { closeTabs, pathsToClose, type TabCloseAction } from "../lib/tabActions";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
-import { CloseIcon, GearIcon } from "./icons";
+import { CloseIcon, GearIcon, PinIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 
 interface MenuState {
@@ -16,6 +16,8 @@ export function EditorTabs() {
   const tabs = useEditorStore((s) => s.tabs);
   const activeTabPath = useEditorStore((s) => s.activeTabPath);
   const setActiveTab = useEditorStore((s) => s.setActiveTab);
+  const makePermanent = useEditorStore((s) => s.makePermanent);
+  const setPinned = useEditorStore((s) => s.setPinned);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -30,6 +32,11 @@ export function EditorTabs() {
     run("close", path);
   }
 
+  function handleUnpin(event: MouseEvent, path: string) {
+    event.stopPropagation();
+    setPinned(path, false);
+  }
+
   function handleAuxClick(event: MouseEvent, path: string) {
     if (event.button === 1) run("close", path);
   }
@@ -41,6 +48,7 @@ export function EditorTabs() {
 
   function menuEntries(target: string): ContextMenuEntry[] {
     const index = tabs.findIndex((t) => t.path === target);
+    const isPinned = Boolean(tabs[index]?.isPinned);
     return [
       { type: "item", label: "Close", onSelect: () => run("close", target) },
       { type: "item", label: "Close Others", disabled: tabs.length < 2, onSelect: () => run("others", target) },
@@ -53,6 +61,8 @@ export function EditorTabs() {
       },
       { type: "separator" },
       { type: "item", label: "Close All", onSelect: () => run("all", target) },
+      { type: "separator" },
+      { type: "item", label: isPinned ? "Unpin" : "Pin", onSelect: () => setPinned(target, !isPinned) },
     ];
   }
 
@@ -62,7 +72,7 @@ export function EditorTabs() {
         {tabs.map((tab) => (
           <div
             key={tab.path}
-            className={`tab${tab.path === activeTabPath ? " is-active" : ""}`}
+            className={`tab${tab.path === activeTabPath ? " is-active" : ""}${tab.isPreview ? " is-preview" : ""}${tab.isPinned ? " is-pinned" : ""}`}
             title={
               tab.settings
                 ? "Settings"
@@ -73,18 +83,25 @@ export function EditorTabs() {
                     : tab.path
             }
             onClick={() => setActiveTab(tab.path)}
+            onDoubleClick={() => makePermanent(tab.path)}
             onAuxClick={(e) => handleAuxClick(e, tab.path)}
             onContextMenu={(e) => handleContextMenu(e, tab.path)}
           >
             {tab.settings ? <GearIcon className="tab__gear" /> : <FileIcon name={tab.title} languageId={tab.language} />}
-            <span>{tab.title}</span>
+            <span className="tab__title">{tab.title}</span>
             {tab.commit && <span className="tab__hint">{tab.commit.shortHash}</span>}
             {tab.stash && <span className="tab__hint">stash#{tab.stash.index}</span>}
             {tab.showDiff && !tab.commit && !tab.stash && <span className="tab__hint">diff</span>}
             {tab.isDirty && <span className="tab__dirty">●</span>}
-            <button className="tab__close" title="Close" onClick={(e) => handleClose(e, tab.path)}>
-              <CloseIcon />
-            </button>
+            {tab.isPinned ? (
+              <button className="tab__close tab__pin" title="Unpin" onClick={(e) => handleUnpin(e, tab.path)}>
+                <PinIcon />
+              </button>
+            ) : (
+              <button className="tab__close" title="Close" onClick={(e) => handleClose(e, tab.path)}>
+                <CloseIcon />
+              </button>
+            )}
           </div>
         ))}
       </div>

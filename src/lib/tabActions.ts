@@ -62,8 +62,23 @@ export async function closeTabs(paths: string[], preferredActive?: string): Prom
   );
 }
 
+/**
+ * Opens `tab` as the preview tab (VS Code's single-click open). The preview it
+ * replaces is never dirty (editing promotes it), so its model is just dropped.
+ */
+export function openPreviewTab(tab: EditorTab): void {
+  const store = useEditorStore.getState();
+  const replaced = store.tabs.find((t) => t.isPreview && t.path !== tab.path);
+  store.addTab({ ...tab, isPreview: true });
+  if (replaced && !useEditorStore.getState().tabs.some((t) => t.path === replaced.path)) {
+    disposeModel(replaced.path);
+    clearViewState(replaced.path);
+  }
+}
+
 export type TabCloseAction = "close" | "others" | "left" | "right" | "all";
 
+/** Bulk actions (others/left/right/all) skip pinned tabs; a plain "close" doesn't. */
 export function pathsToClose(tabs: EditorTab[], target: string, action: TabCloseAction): string[] {
   const index = tabs.findIndex((t) => t.path === target);
   if (index === -1) return [];
@@ -72,12 +87,16 @@ export function pathsToClose(tabs: EditorTab[], target: string, action: TabClose
     case "close":
       return [target];
     case "others":
-      return tabs.filter((t) => t.path !== target).map((t) => t.path);
+      return unpinnedPaths(tabs.filter((t) => t.path !== target));
     case "left":
-      return tabs.slice(0, index).map((t) => t.path);
+      return unpinnedPaths(tabs.slice(0, index));
     case "right":
-      return tabs.slice(index + 1).map((t) => t.path);
+      return unpinnedPaths(tabs.slice(index + 1));
     case "all":
-      return tabs.map((t) => t.path);
+      return unpinnedPaths(tabs);
   }
+}
+
+function unpinnedPaths(tabs: EditorTab[]): string[] {
+  return tabs.filter((t) => !t.isPinned).map((t) => t.path);
 }

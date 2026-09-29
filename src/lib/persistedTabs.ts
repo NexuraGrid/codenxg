@@ -5,6 +5,8 @@ import type { EditorTab } from "../state/editorStore";
 export interface PersistedTab {
   path: string;
   showDiff?: boolean;
+  /** Absent in records saved before pinning existed; read as unpinned. */
+  isPinned?: boolean;
   /** Monaco's own `ICodeEditorViewState`, opaque here — best-effort restore only. */
   viewState?: unknown;
 }
@@ -40,6 +42,7 @@ export function buildWorkspaceRecord(
       return {
         path: tab.path,
         ...(tab.showDiff ? { showDiff: true } : {}),
+        ...(tab.isPinned ? { isPinned: true } : {}),
         ...(viewState !== undefined ? { viewState } : {}),
       };
     }),
@@ -91,6 +94,8 @@ export function planRestoreTabs(
     isDirty: false,
     language: languageFromPath(t.path),
     showDiff: t.showDiff ?? false,
+    // Preview status isn't persisted: every restored tab comes back permanent.
+    isPinned: t.isPinned === true,
   }));
 
   const viewStates = new Map<string, unknown>();

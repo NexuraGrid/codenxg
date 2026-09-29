@@ -379,6 +379,15 @@ svg {
   color: var(--text);
 }
 
+.tab.is-preview .tab__title {
+  font-style: italic;
+}
+
+/* Pinned tabs trade the close button for an always-visible pin (click unpins). */
+.tab .tab__pin {
+  visibility: visible;
+}
+
 .editor__body {
   position: relative;
   flex: 1;

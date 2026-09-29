@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom";
 import { createEntry, type FileEntry } from "../lib/tauri-api";
 import { useEditorStore } from "../state/editorStore";
+import { openPreviewTab } from "../lib/tabActions";
 import { useGitStore } from "../state/gitStore";
 import { useExplorerStore } from "../state/explorerStore";
 import { languageFromPath } from "../lib/language";
@@ -34,8 +35,11 @@ interface MenuTarget {
 
 type OpenMenu = (event: MouseEvent, target: MenuTarget) => void;
 
-function openFile(path: string, name: string) {
-  useEditorStore.getState().addTab({ path, title: name, isDirty: false, language: languageFromPath(path) });
+/** Single click previews the file; double click (`permanent`) keeps its tab. */
+function openFile(path: string, name: string, permanent = false) {
+  const tab = { path, title: name, isDirty: false, language: languageFromPath(path) };
+  if (permanent) useEditorStore.getState().addTab(tab);
+  else openPreviewTab(tab);
 }
 
 interface NameInputProps {
@@ -184,6 +188,11 @@ const TreeNode = memo(function TreeNode({
     else openFile(entry.path, entry.name);
   }
 
+  function handleDoubleClick() {
+    if (isClickSuppressed() || entry.isDir) return;
+    openFile(entry.path, entry.name, true);
+  }
+
   async function rename(name: string) {
     await renamePath(entry.path, parentPath, name);
     useExplorerStore.getState().cancelRename();
@@ -218,6 +227,7 @@ const TreeNode = memo(function TreeNode({
             onDragStart(e, { path: entry.path, name: entry.name, isDir: entry.isDir, parentPath })
           }
           onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
           onContextMenu={(e) =>
             onContextMenu(e, {
               dir: entry.isDir ? entry.path : parentPath,
