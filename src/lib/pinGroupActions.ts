@@ -6,6 +6,7 @@ import { languageFromPath } from "./language";
 import { closeTabs } from "./tabActions";
 import { planGroupSwitch, type PinGroup } from "./pinGroups";
 import { existingPaths } from "./tabPersistence";
+import { showToast } from "../state/toastStore";
 import { isPersistableTab } from "./persistedTabs";
 
 /** Checks which of `paths` still exist; injectable for tests. */
@@ -83,6 +84,28 @@ export async function renameGroupFromPrompt(groupId: string): Promise<void> {
   }
 }
 
+/**
+ * Shows `message` with an Undo that puts the group back exactly as it was
+ * just before the change (see the store's restoreGroup). Call before changing it.
+ */
+function offerUndo(groupId: string, message: string): void {
+  const { root, groups, activeGroupId } = usePinGroupStore.getState();
+  const index = groups.findIndex((g) => g.id === groupId);
+  if (index < 0) return;
+  const snapshot = groups[index];
+  const wasActive = activeGroupId === groupId;
+  showToast(message, {
+    action: {
+      label: "Undo",
+      run: () => {
+        // A toast can outlive its workspace; never restore into another one.
+        if (usePinGroupStore.getState().root !== root) return;
+        usePinGroupStore.getState().restoreGroup(snapshot, index, wasActive);
+      },
+    },
+  });
+}
+
 function fileCount(count: number): string {
   return count === 1 ? "1 file" : `${count} files`;
 }
@@ -112,7 +135,10 @@ export async function deleteGroupWithConfirm(groupId: string): Promise<boolean> 
     "Its files and open tabs are not affected.",
     "Delete",
   );
-  if (confirmed) usePinGroupStore.getState().deleteGroup(groupId);
+  if (confirmed) {
+    offerUndo(groupId, `Deleted group "${group.name}"`);
+    usePinGroupStore.getState().deleteGroup(groupId);
+  }
   return confirmed;
 }
 
@@ -132,6 +158,12 @@ export async function removeFilesFromGroupWithConfirm(groupId: string, paths: st
     );
     if (!confirmed) return false;
   }
+  offerUndo(
+    groupId,
+    removing.length === 1
+      ? `Removed ${basename(removing[0])} from "${group.name}"`
+      : `Removed ${fileCount(removing.length)} from "${group.name}"`,
+  );
   usePinGroupStore.getState().removeFilesFromGroup(groupId, removing);
   return true;
 }
@@ -145,7 +177,10 @@ export async function clearGroupWithConfirm(groupId: string): Promise<boolean> {
     "The group is kept, empty. The files and their open tabs are not affected.",
     "Remove All",
   );
-  if (confirmed) usePinGroupStore.getState().clearGroup(groupId);
+  if (confirmed) {
+    offerUndo(groupId, `Removed all ${fileCount(group.paths.length)} from "${group.name}"`);
+    usePinGroupStore.getState().clearGroup(groupId);
+  }
   return confirmed;
 }
 
@@ -177,8 +212,11 @@ export async function openGroupFile(
   return "opened";
 }
 
-/** Takes `path` out of a group; its tab (if open) is left as it is. */
+/** Takes `path` out of a group (with an Undo); its tab (if open) is left as it is. */
 export function removeFileFromGroup(groupId: string, path: string): void {
+  const group = usePinGroupStore.getState().groups.find((g) => g.id === groupId);
+  if (!group?.paths.includes(path)) return;
+  offerUndo(groupId, `Removed ${basename(path)} from "${group.name}"`);
   usePinGroupStore.getState().removeFile(groupId, path);
 }
 

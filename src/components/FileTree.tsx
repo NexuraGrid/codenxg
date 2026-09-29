@@ -181,6 +181,12 @@ const TreeNode = memo(function TreeNode({
   const isDropTarget = useExplorerStore((s) => entry.isDir && s.dropTarget === entry.path);
   const isDragSource = useExplorerStore((s) => s.dragging === entry.path);
   const isActive = useEditorStore((s) => !entry.isDir && s.activeTabPath === entry.path);
+  const revealNonce = useExplorerStore((s) => (s.revealed?.path === entry.path ? s.revealed.nonce : null));
+  const rowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (revealNonce !== null) rowRef.current?.scrollIntoView({ block: "center" });
+  }, [revealNonce]);
 
   function handleClick() {
     if (isClickSuppressed()) return;
@@ -219,7 +225,8 @@ const TreeNode = memo(function TreeNode({
         />
       ) : (
         <div
-          className={`file${isActive ? " is-active" : ""}${isDragSource ? " is-drag-source" : ""}`}
+          ref={rowRef}
+          className={`file${isActive ? " is-active" : ""}${isDragSource ? " is-drag-source" : ""}${revealNonce !== null ? " is-revealed" : ""}`}
           style={indent(depth)}
           data-drop-dir={entry.isDir ? entry.path : parentPath}
           data-folder={entry.isDir ? entry.path : undefined}
@@ -312,6 +319,7 @@ export function FileTree({ rootPath }: FileTreeProps) {
     <ul
       className={`file-list file-tree${isRootDropTarget ? " is-drop-target" : ""}`}
       data-drop-dir={rootPath}
+      onPointerDown={() => useExplorerStore.getState().clearRevealed()}
       onContextMenu={(e) => openMenu(e, { dir: rootPath })}
     >
       <CreateSlot parent={rootPath} depth={0} />

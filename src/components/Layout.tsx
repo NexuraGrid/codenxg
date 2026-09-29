@@ -3,6 +3,7 @@ import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FileTree } from "./FileTree";
 import { PinGroupsSection } from "./PinGroupsSection";
+import { useExplorerStore } from "../state/explorerStore";
 import { EditorTabs } from "./EditorTabs";
 import { MonacoEditor } from "./MonacoEditor";
 import { TerminalPanel } from "./TerminalPanel";
@@ -58,6 +59,15 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
   const terminalPanelRef = useRef<ImperativePanelHandle>(null);
   const [sidebarView, setSidebarView] = useState<SidebarView>("files");
   const [isOutputOpen, setIsOutputOpen] = useState(true);
+
+  // "Reveal in Explorer" from anywhere brings the file tree into view.
+  useEffect(
+    () =>
+      useExplorerStore.subscribe((state, previous) => {
+        if (state.revealed && state.revealed !== previous.revealed) setSidebarView("files");
+      }),
+    [],
+  );
 
   function toggleOutput() {
     const panel = terminalPanelRef.current;

@@ -8,8 +8,9 @@ import { CloseIcon, GearIcon, PinIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
 import { PinGroupSwitcher } from "./PinGroupSwitcher";
 import { usePinGroupStore } from "../state/pinGroupStore";
+import { useExplorerStore } from "../state/explorerStore";
 import { isPersistableTab } from "../lib/persistedTabs";
-import { addFileToGroup, createGroupFromPrompt } from "../lib/pinGroupActions";
+import { addFileToGroup, createGroupFromPrompt, removeFileFromGroup } from "../lib/pinGroupActions";
 
 interface MenuState {
   x: number;
@@ -82,6 +83,16 @@ export function EditorTabs() {
       },
       { type: "separator" },
       { type: "item", label: "Close All", onSelect: () => run("all", target) },
+      ...(tabs[index] && isPersistableTab(tabs[index])
+        ? [
+            { type: "separator" } as const,
+            {
+              type: "item",
+              label: "Reveal in Explorer",
+              onSelect: () => void useExplorerStore.getState().reveal(target),
+            } as const,
+          ]
+        : []),
       { type: "separator" },
       { type: "item", label: isPinned ? "Unpin" : "Pin", onSelect: () => setPinned(target, !isPinned) },
       ...(tabs[index] && isPersistableTab(tabs[index]) ? pinGroupEntries(target) : []),
@@ -110,7 +121,7 @@ export function EditorTabs() {
       },
     ];
     if (containing.length > 0) {
-      const remove = usePinGroupStore.getState().removeFile;
+      const remove = removeFileFromGroup;
       entries.push(
         containing.length === 1
           ? { type: "item", label: `Remove from "${containing[0].name}"`, onSelect: () => remove(containing[0].id, target) }

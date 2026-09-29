@@ -255,6 +255,10 @@ svg {
   background: var(--panel-active);
 }
 
+.file.is-revealed {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .chevron {
   width: 12px;
   height: 12px;
@@ -349,6 +353,18 @@ svg {
 
 .pin-section__file {
   padding-left: 32px;
+}
+
+.pin-section__file.is-drag-source {
+  opacity: 0.5;
+}
+
+.pin-section__file.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.pin-section__file.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .pin-section__file.is-focused {
@@ -981,6 +997,58 @@ body.is-dragging-entry * {
 }
 
 /* ================= DIALOG ================= */
+.toaster {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 190;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 8px 8px 8px 12px;
+  background: var(--panel);
+  border: 1px solid #2e2e2e;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color: var(--text);
+  font-size: 13px;
+  pointer-events: auto;
+  animation: dialog-in 0.14s ease-out;
+}
+
+.toast__message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast__action {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: var(--panel-hover);
+}
+
 .dialog-backdrop {
   position: fixed;
   inset: 0;

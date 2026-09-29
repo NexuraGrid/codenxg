@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import {
   findGroupByName,
+  movePathTo,
   normalizeGroupName,
+  restoreGroup,
   rebaseGroupPaths,
   removeGroupPathsUnder,
   type PinGroup,
@@ -31,6 +33,13 @@ interface PinGroupState {
   /** Empties a group, keeping the group itself. */
   clearGroup: (id: string) => void;
   setActiveGroup: (id: string | null) => void;
+  /** Moves one of a group's files to position `toIndex` (its tab order). */
+  moveFile: (id: string, path: string, toIndex: number) => void;
+  /**
+   * Undoes a removal or deletion: see `restoreGroup` in lib/pinGroups. A
+   * deleted group that was active becomes active again if no other group is.
+   */
+  restoreGroup: (snapshot: PinGroup, index: number, wasActive: boolean) => void;
   /** Follows a rename or move made in the app (a folder carries its contents). */
   rebasePaths: (from: string, to: string) => void;
   /**
@@ -105,6 +114,21 @@ export const usePinGroupStore = create<PinGroupState>((set, get) => ({
     set((state) => ({ groups: state.groups.map((g) => (g.id === id ? { ...g, paths: [] } : g)) })),
 
   setActiveGroup: (id) => set({ activeGroupId: id }),
+
+  moveFile: (id, path, toIndex) =>
+    set((state) => ({
+      groups: state.groups.map((g) => {
+        if (g.id !== id) return g;
+        const paths = movePathTo(g.paths, g.paths.indexOf(path), toIndex);
+        return paths === g.paths ? g : { ...g, paths };
+      }),
+    })),
+
+  restoreGroup: (snapshot, index, wasActive) =>
+    set((state) => ({
+      groups: restoreGroup(state.groups, snapshot, index),
+      activeGroupId: wasActive && state.activeGroupId === null ? snapshot.id : state.activeGroupId,
+    })),
 
   rebasePaths: (from, to) => set((state) => ({ groups: rebaseGroupPaths(state.groups, from, to) })),
 

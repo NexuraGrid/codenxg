@@ -91,3 +91,37 @@ export function removeGroupPathsUnder(groups: PinGroup[], path: string): PinGrou
       : group,
   );
 }
+
+/**
+ * Where a dragged entry lands: dropped in the gap before `insertBefore`
+ * (`length` for after the last one), counted once it has left its old slot.
+ */
+export function dropTargetIndex(from: number, insertBefore: number): number {
+  return insertBefore > from ? insertBefore - 1 : insertBefore;
+}
+
+/** `paths` with the entry at `from` moved to `to` (clamped); the same array when nothing moves. */
+export function movePathTo(paths: string[], from: number, to: number): string[] {
+  const target = Math.max(0, Math.min(to, paths.length - 1));
+  if (from < 0 || from >= paths.length || from === target) return paths;
+  const next = [...paths];
+  const [moved] = next.splice(from, 1);
+  next.splice(target, 0, moved);
+  return next;
+}
+
+/**
+ * Puts a group back as it was in `snapshot` (undo): a deleted group returns
+ * at `index`; an existing one gets its earlier files back in their earlier
+ * order, keeping any added since at the end.
+ */
+export function restoreGroup(groups: PinGroup[], snapshot: PinGroup, index: number): PinGroup[] {
+  const current = groups.find((g) => g.id === snapshot.id);
+  if (!current) {
+    const at = Math.max(0, Math.min(index, groups.length));
+    return [...groups.slice(0, at), { ...snapshot, paths: [...snapshot.paths] }, ...groups.slice(at)];
+  }
+  const earlier = new Set(snapshot.paths);
+  const paths = [...snapshot.paths, ...current.paths.filter((p) => !earlier.has(p))];
+  return groups.map((g) => (g.id === snapshot.id ? { ...current, paths } : g));
+}

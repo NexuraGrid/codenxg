@@ -17,6 +17,24 @@ export function rebase(path: string, from: string, to: string): string {
   return path === from ? to : to + path.slice(from.length);
 }
 
+/**
+ * The folders between `root` (excluded) and `path` (excluded), outermost
+ * first — what must be expanded for `path` to show in a tree rooted at
+ * `root`. Null when `path` isn't strictly inside `root`.
+ */
+export function ancestorDirsWithin(path: string, root: string): string[] | null {
+  if (path === root || !isSameOrInside(path, root)) return null;
+  const sep = path[root.length];
+  const segments = path.slice(root.length + 1).split(/[\\/]/);
+  const dirs: string[] = [];
+  let current = root;
+  for (const segment of segments.slice(0, -1)) {
+    current = `${current}${sep}${segment}`;
+    dirs.push(current);
+  }
+  return dirs;
+}
+
 const WINDOWS_DRIVE_URI_PATH = /^\/([A-Za-z]):(\/.*)?$/;
 
 /**

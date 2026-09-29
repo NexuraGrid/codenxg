@@ -1,8 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { usePinGroupStore } from "../state/pinGroupStore";
 import { useEditorStore } from "../state/editorStore";
-import { groupFileLabel, type PinGroup } from "../lib/pinGroups";
+import { dropTargetIndex, groupFileLabel, type PinGroup } from "../lib/pinGroups";
+import { useExplorerStore } from "../state/explorerStore";
+import { isSameOrInside } from "../lib/paths";
 import {
   activeFilePath,
   addActiveFileToGroup,
@@ -156,6 +168,16 @@ export function PinGroupsSection() {
           disabled: missing.has(path),
           onSelect: () => void openFileFromGroup(group.id, path, false),
         },
+        {
+          type: "item",
+          label: "Reveal in Explorer",
+          disabled: missing.has(path) || !root || path === root || !isSameOrInside(path, root),
+          onSelect: () => {
+            closeFlyout();
+            void useExplorerStore.getState().reveal(path);
+          },
+        },
+        { type: "separator" },
         { type: "item", label: "Remove from Group", onSelect: () => removeFileFromGroup(group.id, path) },
       ];
     }
@@ -298,7 +320,8 @@ interface GroupFlyoutProps {
  * Files can be checked for removal from the group: checkbox or Ctrl/Cmd+click
  * toggles, Shift+click checks a range, Space / Ctrl+A / Delete from the
  * keyboard. Checking anything makes a hover-opened flyout sticky. Removing
- * files (or the group) never closes or unpins their tabs.
+ * files (or the group) never closes or unpins their tabs; each removal can be
+ * undone from its toast. Files reorder by dragging, or Alt+Up/Down.
  */
 function GroupFlyout({
   group,
@@ -327,6 +350,7 @@ function GroupFlyout({
   const checked = checkedItems(group.paths, selection);
   const selecting = checked.length > 0;
   const allChecked = selecting && checked.length === group.paths.length;
+  const { drag, beginDrag, isClickSuppressed } = useFlyoutReorder(listRef, group, onPin, setSelected);
 
   useEffect(() => {
     if (mode === "click") panelRef.current?.focus({ preventScroll: true });
@@ -379,6 +403,7 @@ function GroupFlyout({
   }
 
   function onRowClick(event: MouseEvent, index: number) {
+    if (isClickSuppressed()) return;
     if (event.shiftKey) pick(index, "range");
     else if (event.ctrlKey || event.metaKey || selecting) pick(index, "toggle");
     else open(group.paths[index]);
@@ -407,9 +432,20 @@ function GroupFlyout({
     if (!(await deleteGroupWithConfirm(group.id))) refocus();
   }
 
+  /** Alt+Up/Down: the keyboard's drag-to-reorder, moving the focused file one slot. */
+  function moveFocused(delta: number) {
+    const path = group.paths[current];
+    const to = current + delta;
+    if (path === undefined || to < 0 || to >= group.paths.length) return;
+    onPin();
+    usePinGroupStore.getState().moveFile(group.id, path, to);
+    setSelected(to);
+  }
+
   function onKeyDown(event: KeyboardEvent) {
     const count = group.paths.length;
-    if (event.key === " " && count) pick(current, "toggle");
+    if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) moveFocused(event.key === "ArrowUp" ? -1 : 1);
+    else if (event.key === " " && count) pick(current, "toggle");
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && count) setSelection((s) => selectAll(group.paths, s));
     else if (event.key === "Delete" && count) void remove(selecting ? checked : [group.paths[current]]);
     else if (event.key === "ArrowDown" && count) setSelected((current + 1) % count);
@@ -479,14 +515,17 @@ function GroupFlyout({
           const isFocused = isActive && path === activeTabPath;
           const isSelected = mode === "click" && i === current;
           const isChecked = selection.checked.has(path);
+          const isDragged = drag?.from === i;
+          const dropMark = drag && drag.insertBefore === i ? " is-drop-before" : drag && i === group.paths.length - 1 && drag.insertBefore === group.paths.length ? " is-drop-after" : "";
           return (
             <li
               key={path}
               id={`pin-flyout-${i}`}
               role="option"
               aria-selected={isChecked}
-              className={`pin-section__row pin-section__file${isMissing ? " is-missing" : ""}${isFocused ? " is-focused" : ""}${isSelected ? " is-selected" : ""}${isChecked ? " is-checked" : ""}`}
+              className={`pin-section__row pin-section__file${isMissing ? " is-missing" : ""}${isFocused ? " is-focused" : ""}${isSelected ? " is-selected" : ""}${isChecked ? " is-checked" : ""}${isDragged ? " is-drag-source" : ""}${dropMark}`}
               title={isMissing ? `${path} (missing)` : path}
+              onPointerDown={(e) => beginDrag(e, i)}
               onClick={(e) => onRowClick(e, i)}
               onContextMenu={(e) => onFileMenu(e, path)}
             >
@@ -526,4 +565,85 @@ function GroupFlyout({
     </div>,
     document.body,
   );
+}
+
+/** Pointer travel before a press on a file becomes a drag (a click otherwise). */
+const DRAG_THRESHOLD_PX = 4;
+
+interface FlyoutDrag {
+  from: number;
+  /** The gap the file would drop into: before this row, or `length` for the end. */
+  insertBefore: number;
+}
+
+/**
+ * Drag-to-reorder for a flyout's files, pointer-based like the file tree's:
+ * a press past the threshold picks the file up, the gap nearest the pointer
+ * shows where it lands, and releasing moves it there (in the group's order,
+ * which is its tabs' order). The click that ends a drag doesn't open the file.
+ */
+function useFlyoutReorder(
+  listRef: RefObject<HTMLUListElement | null>,
+  group: PinGroup,
+  onPin: () => void,
+  onMoved: (index: number) => void,
+) {
+  const [drag, setDrag] = useState<FlyoutDrag | null>(null);
+  const suppressClick = useRef(false);
+  const stopRef = useRef<(() => void) | null>(null);
+  const latest = useRef({ group, onPin, onMoved });
+  latest.current = { group, onPin, onMoved };
+
+  useEffect(() => () => stopRef.current?.(), []);
+
+  function insertionAt(clientY: number): number {
+    const rows = Array.from(listRef.current?.children ?? []);
+    const index = rows.findIndex((row) => {
+      const rect = row.getBoundingClientRect();
+      return clientY < rect.top + rect.height / 2;
+    });
+    return index < 0 ? rows.length : index;
+  }
+
+  function beginDrag(event: ReactPointerEvent, from: number) {
+    const target = event.target as Element;
+    if (event.button !== 0 || target.closest("button, .pin-check") || latest.current.group.paths.length < 2) return;
+    const startY = event.clientY;
+    let current: FlyoutDrag | null = null;
+
+    function onMove(e: PointerEvent) {
+      if (!current && Math.abs(e.clientY - startY) < DRAG_THRESHOLD_PX) return;
+      if (!current) latest.current.onPin();
+      current = { from, insertBefore: insertionAt(e.clientY) };
+      setDrag(current);
+    }
+    function onUp() {
+      stop();
+      if (!current) return;
+      suppressClick.current = true;
+      // The click (if any) fires right after pointerup; nothing after it should be eaten.
+      window.setTimeout(() => (suppressClick.current = false), 0);
+      const { group: g, onMoved: moved } = latest.current;
+      const path = g.paths[current.from];
+      const to = dropTargetIndex(current.from, current.insertBefore);
+      if (path !== undefined && to !== current.from) {
+        usePinGroupStore.getState().moveFile(g.id, path, to);
+        moved(to);
+      }
+    }
+    function stop() {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", stop);
+      stopRef.current = null;
+      setDrag(null);
+    }
+    stopRef.current?.();
+    stopRef.current = stop;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", stop);
+  }
+
+  return { drag, beginDrag, isClickSuppressed: () => suppressClick.current };
 }

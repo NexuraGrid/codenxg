@@ -7,6 +7,7 @@ import { useApplyEditorSettings } from "./lib/useApplyEditorSettings";
 import { launchFolder, setWorkspace } from "./lib/tauri-api";
 import { confirmUnsaved } from "./lib/tabActions";
 import { DialogHost } from "./components/DialogHost";
+import { Toaster } from "./components/Toaster";
 import { disposeAllModels } from "./lib/monacoModelRegistry";
 import { pickFolder, rememberWorkspace, restoreLastWorkspace } from "./lib/workspace";
 import { useEditorStore } from "./state/editorStore";
@@ -127,6 +128,7 @@ function App() {
   return (
     <>
       {renderScreen()}
+      <Toaster />
       <DialogHost />
     </>
   );
