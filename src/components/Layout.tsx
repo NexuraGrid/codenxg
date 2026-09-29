@@ -15,6 +15,7 @@ import { useEditorStore } from "../state/editorStore";
 import { usePinGroupStore } from "../state/pinGroupStore";
 import { FilesIcon, FolderOpenIcon, GearIcon, GitIcon, GlobeIcon, PencilIcon, SearchIcon, TerminalIcon } from "./icons";
 import { QuickOpen } from "./QuickOpen";
+import { CommandPalette } from "./CommandPalette";
 import { PinGroupQuickPick, usePinQuickPickHotkeys } from "./PinGroupQuickPick";
 import { useHotkey } from "../lib/useHotkey";
 import { useFileWatcher } from "../lib/fileWatcher";
@@ -27,6 +28,8 @@ import { canToggleMarkdownPreview, toggleMarkdownPreview } from "../lib/markdown
 import { cancelScheduledSave, flushWorkspaceTabsNow, restoreWorkspaceTabs, scheduleSaveWorkspaceTabs } from "../lib/tabPersistence";
 import { usePaletteStore } from "../state/paletteStore";
 import { useSearchStore } from "../state/searchStore";
+import { registerCommands } from "../lib/commands/registry";
+import { appCommands, layoutCommands, showCommandPalette, type LayoutActions } from "../lib/commands/appCommands";
 import { useTerminalStore } from "../state/terminalStore";
 
 // Ctrl+E / Ctrl+P are shell bindings too (fish: accept suggestion, history);
@@ -148,20 +151,35 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
 
   // Ctrl+Shift+F: VS Code's project-wide search. Prefills the query from the
   // editor's current selection, like VS Code does.
-  useHotkey(
-    "mod+shift+f",
-    () => {
-      const editor = getActiveEditor();
-      const model = editor?.getModel();
-      const selection = editor?.getSelection();
-      const selectedText = model && selection ? model.getValueInRange(selection) : "";
-      const prefill = prefillFromSelection(selectedText);
-      if (prefill) useSearchStore.getState().setQuery(prefill);
-      useSearchStore.getState().requestFocus();
-      setSidebarView("search");
-    },
-    { capture: true },
-  );
+  function findInFiles() {
+    const editor = getActiveEditor();
+    const model = editor?.getModel();
+    const selection = editor?.getSelection();
+    const selectedText = model && selection ? model.getValueInRange(selection) : "";
+    const prefill = prefillFromSelection(selectedText);
+    if (prefill) useSearchStore.getState().setQuery(prefill);
+    useSearchStore.getState().requestFocus();
+    setSidebarView("search");
+  }
+  useHotkey("mod+shift+f", findInFiles, { capture: true });
+
+  // The Command Palette's registry: app-wide commands plus the ones that need
+  // this Layout (panels, sidebar views). Read through a ref, so they always
+  // call the current handlers without re-registering on every render.
+  const actions: LayoutActions = {
+    toggleTerminal: toggleOutput,
+    newTerminal,
+    showView: setSidebarView,
+    findInFiles,
+    openFolder: onOpenFolder,
+  };
+  const layoutActions = useRef(actions);
+  layoutActions.current = actions;
+  useEffect(() => registerCommands([...appCommands(), ...layoutCommands(() => layoutActions.current)]), []);
+  // Ctrl+Shift+P / F1, from anywhere: captured ahead of Monaco (whose own
+  // palette uses the same keys) and xterm (which would send ^P to the shell).
+  useHotkey("mod+shift+p", () => showCommandPalette(), { capture: true });
+  useHotkey("f1", () => showCommandPalette(), { capture: true });
 
   const openPalette = usePaletteStore((s) => s.open);
   useHotkey("mod+e", () => openPalette(""), { capture: true, when: outsideTerminal });
@@ -268,6 +286,7 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
       </PanelGroup>
 
       <QuickOpen root={workspaceRoot} />
+      <CommandPalette />
       <PinGroupQuickPick />
 
       {/* Lives outside the collapsible panel so it can reopen it. */}

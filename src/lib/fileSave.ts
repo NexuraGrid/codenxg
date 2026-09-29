@@ -5,6 +5,7 @@ import { notifySaved } from "./lsp/manager";
 import { getActiveEditor } from "./editorInstance";
 import { useSettingsStore } from "../state/settingsStore";
 import { useEditorStore } from "../state/editorStore";
+import { showDialog } from "../state/dialogStore";
 
 export async function saveFile(path: string): Promise<void> {
   const model = getModel(path);
@@ -18,6 +19,23 @@ export async function saveFile(path: string): Promise<void> {
   notifySaved(model);
   // Saving a preview tab keeps it, same as editing it would.
   useEditorStore.getState().makePermanent(path);
+}
+
+/** Ctrl+S / "File: Save": saves the active tab, reporting a failed write in a dialog. */
+export async function saveActiveTab(): Promise<void> {
+  const { tabs, activeTabPath } = useEditorStore.getState();
+  const tab = tabs.find((t) => t.path === activeTabPath);
+  if (!tab) return;
+  try {
+    await saveFile(tab.path);
+  } catch (error) {
+    await showDialog({
+      title: `Couldn't save ${tab.title}`,
+      message: String(error),
+      buttons: [{ label: "OK", value: "ok", variant: "primary" }],
+      cancelValue: "ok",
+    });
+  }
 }
 
 // Best-effort: the language-registered formatting provider (see lsp/manager.ts)

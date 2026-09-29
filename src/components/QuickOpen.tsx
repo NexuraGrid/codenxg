@@ -70,7 +70,7 @@ function lineTarget(
 }
 
 export function QuickOpen({ root }: { root: string }) {
-  const isOpen = usePaletteStore((s) => s.isOpen);
+  const isOpen = usePaletteStore((s) => s.isOpen && !s.commandMode);
   // Mounted fresh on every open, so query/selection always start clean.
   return isOpen ? <QuickOpenPanel root={root} /> : null;
 }
@@ -213,9 +213,16 @@ function QuickOpenPanel({ root }: { root: string }) {
           className="palette__input"
           value={query}
           spellCheck={false}
-          placeholder="Search files by name (type : to go to a line)"
+          placeholder="Search files by name (type : to go to a line, > for commands)"
           onChange={(e) => {
-            setQuery(e.target.value);
+            const next = e.target.value;
+            // VS Code parity: a leading ">" turns Quick Open into the Command Palette.
+            if (next.startsWith(">")) {
+              if (previewedRef.current && editor && initialView) editor.restoreViewState(initialView);
+              usePaletteStore.getState().openCommands(next.slice(1));
+              return;
+            }
+            setQuery(next);
             setSelected(0);
           }}
           onKeyDown={onKeyDown}

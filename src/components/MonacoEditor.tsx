@@ -3,10 +3,10 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import type * as monacoTypes from "monaco-editor";
 import { useEditorStore, type EditorTab } from "../state/editorStore";
 import { useSettingsStore } from "../state/settingsStore";
-import { showDialog } from "../state/dialogStore";
 import { readFile } from "../lib/tauri-api";
 import { getModel, createModel, pathOfModel } from "../lib/monacoModelRegistry";
-import { saveFile } from "../lib/fileSave";
+import { executeCommand } from "../lib/commands/registry";
+import { SAVE_COMMAND_ID, disableMonacoQuickCommand } from "../lib/commands/appCommands";
 import { setActiveEditor } from "../lib/editorInstance";
 import { installEditorClipboard } from "../lib/editorClipboard";
 import { EDITOR_THEME_ID } from "../lib/editorTheme";
@@ -94,15 +94,7 @@ export function MonacoEditor() {
       const isSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
       if (!isSaveShortcut || !activeTab) return;
       event.preventDefault();
-
-      saveFile(activeTab.path).catch((error) =>
-        showDialog({
-          title: `Couldn't save ${activeTab.title}`,
-          message: String(error),
-          buttons: [{ label: "OK", value: "ok", variant: "primary" }],
-          cancelValue: "ok",
-        }),
-      );
+      void executeCommand(SAVE_COMMAND_ID);
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -113,6 +105,7 @@ export function MonacoEditor() {
     editorRef.current = editor;
     setActiveEditor(editor);
     installEditorClipboard(editor, monaco);
+    disableMonacoQuickCommand(monaco);
     // Ctrl+K V: VS Code's "open preview to the side". There are no split
     // editor groups, so it opens the preview as a tab, like Ctrl+Shift+V.
     editor.addCommand(
