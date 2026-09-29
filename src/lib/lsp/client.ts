@@ -48,6 +48,9 @@ export class LspClient {
     if (this.closed) return Promise.reject(new Error("language server stopped"));
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
+      // Assigned after the pending entry exists, but read by its callbacks, so it
+      // cannot be a const declared further down.
+      // eslint-disable-next-line prefer-const
       let subscription: { dispose(): void } | undefined;
       this.pending.set(id, {
         resolve: (value) => {

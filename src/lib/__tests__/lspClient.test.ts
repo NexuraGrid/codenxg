@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { LspClient } from "../lsp/client";
 
+interface WireMessage {
+  jsonrpc: string;
+  id?: number;
+  method?: string;
+  params?: unknown;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
 function setup(onRequest: (method: string, params: unknown) => unknown = () => undefined) {
-  const sent: any[] = [];
+  const sent: WireMessage[] = [];
   const notifications: [string, unknown][] = [];
   const client = new LspClient((json) => sent.push(JSON.parse(json)), {
     onNotification: (method, params) => notifications.push([method, params]),
@@ -45,7 +54,7 @@ describe("LspClient", () => {
     client.receive(JSON.stringify({ jsonrpc: "2.0", id: 7, method: "workspace/configuration", params: {} }));
     client.receive(JSON.stringify({ jsonrpc: "2.0", id: 8, method: "weird/thing" }));
     expect(sent[0]).toEqual({ jsonrpc: "2.0", id: 7, result: [null] });
-    expect(sent[1].error.code).toBe(-32601);
+    expect(sent[1].error?.code).toBe(-32601);
   });
 
   it("forwards notifications", () => {
@@ -74,7 +83,7 @@ describe("LspClient", () => {
     const { client, sent } = setup(() => Promise.reject(new Error("boom")));
     client.receive(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "workspace/applyEdit", params: {} }));
     await new Promise((r) => setTimeout(r, 0));
-    expect(sent[0].error.message).toBe("Error: boom");
+    expect(sent[0].error?.message).toBe("Error: boom");
   });
 
   it("fails waiting requests when the server stops", async () => {

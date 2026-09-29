@@ -138,7 +138,7 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
       "<-", "++", "--", "==", "<", ">", "=", "!", "!=", "<=", ">=", ":=",
       "...",
     ],
-    symbols: /[=><!~?:&|+\-*\/\^%]+/,
+    symbols: /[=><!~?:&|+\-*/^%]+/,
     escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
     tokenizer: {
       root: [
@@ -154,15 +154,15 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
           },
         ],
         { include: "@whitespace" },
-        [/[{}()\[\]]/, "@brackets"],
+        [/[{}()[\]]/, "@brackets"],
         [/@symbols/, { cases: { "@operators": "delimiter", "@default": "" } }],
         // Go allows `_` between digits and an `i` suffix for imaginary values.
-        [/0[xX][0-9a-fA-F_]+(?:\.[0-9a-fA-F_]*)?(?:[pP][\-+]?\d+)?i?/, "number.hex"],
+        [/0[xX][0-9a-fA-F_]+(?:\.[0-9a-fA-F_]*)?(?:[pP][-+]?\d+)?i?/, "number.hex"],
         [/0[bB][01_]+i?/, "number.binary"],
         [/0[oO][0-7_]+i?/, "number.octal"],
-        [/\d[\d_]*\.[\d_]*(?:[eE][\-+]?\d+)?i?/, "number.float"],
-        [/\.\d[\d_]*(?:[eE][\-+]?\d+)?i?/, "number.float"],
-        [/\d[\d_]*[eE][\-+]?\d+i?/, "number.float"],
+        [/\d[\d_]*\.[\d_]*(?:[eE][-+]?\d+)?i?/, "number.float"],
+        [/\.\d[\d_]*(?:[eE][-+]?\d+)?i?/, "number.float"],
+        [/\d[\d_]*[eE][-+]?\d+i?/, "number.float"],
         [/\d[\d_]*i?/, "number"],
         [/[;,.]/, "delimiter"],
         [/"([^"\\]|\\.)*$/, "string.invalid"],
@@ -178,9 +178,9 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
         [/\/\/.*$/, "comment"],
       ],
       comment: [
-        [/[^\/*]+/, "comment"],
+        [/[^/*]+/, "comment"],
         [/\*\//, "comment", "@pop"],
-        [/[\/*]/, "comment"],
+        [/[/*]/, "comment"],
       ],
       string: [
         [/[^\\"]+/, "string"],
@@ -189,7 +189,7 @@ function goLanguage(): monacoTypes.languages.IMonarchLanguage {
         [/"/, "string", "@pop"],
       ],
       rawstring: [
-        [/[^\`]+/, "string"],
+        [/[^`]+/, "string"],
         [/`/, "string", "@pop"],
       ],
     },
