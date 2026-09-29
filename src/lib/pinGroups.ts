@@ -1,5 +1,5 @@
 import type { EditorTab } from "../state/editorStore";
-import { basename, dirname, isSameOrInside } from "./paths";
+import { basename, dirname, isSameOrInside, rebase } from "./paths";
 
 /** A named set of files, per workspace, that can be opened together as pinned tabs. */
 export interface PinGroup {
@@ -69,4 +69,25 @@ export function groupFileLabel(path: string, root: string | null): { name: strin
   if (dir === path || dir === root) return { name, dir: "" };
   if (root && isSameOrInside(dir, root)) return { name, dir: dir.slice(root.length + 1).replace(/\\/g, "/") };
   return { name, dir };
+}
+
+/**
+ * Groups after `from` was renamed or moved to `to`: the file itself, or every
+ * file under it for a folder, follows along. Unchanged groups keep their identity.
+ */
+export function rebaseGroupPaths(groups: PinGroup[], from: string, to: string): PinGroup[] {
+  return groups.map((group) => {
+    if (!group.paths.some((p) => isSameOrInside(p, from))) return group;
+    const paths = group.paths.map((p) => (isSameOrInside(p, from) ? rebase(p, from, to) : p));
+    return { ...group, paths: [...new Set(paths)] };
+  });
+}
+
+/** Groups without `path` (and, for a folder, anything under it). */
+export function removeGroupPathsUnder(groups: PinGroup[], path: string): PinGroup[] {
+  return groups.map((group) =>
+    group.paths.some((p) => isSameOrInside(p, path))
+      ? { ...group, paths: group.paths.filter((p) => !isSameOrInside(p, path)) }
+      : group,
+  );
 }

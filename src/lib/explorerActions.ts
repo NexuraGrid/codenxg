@@ -3,11 +3,13 @@ import { disposeModel, rebaseModels } from "./monacoModelRegistry";
 import { basename, isSameOrInside } from "./paths";
 import { useEditorStore } from "../state/editorStore";
 import { useExplorerStore } from "../state/explorerStore";
+import { usePinGroupStore } from "../state/pinGroupStore";
 import { showDialog } from "../state/dialogStore";
 
 /**
- * After a rename or move on disk: carries every open tab, Monaco model and
- * expanded folder from `oldPath` to `newPath`, then reloads the listings.
+ * After a rename or move on disk: carries every open tab, Monaco model,
+ * pin group entry and expanded folder from `oldPath` to `newPath`, then
+ * reloads the listings.
  */
 async function followRelocation(oldPath: string, newPath: string, dirsToRefresh: string[]) {
   // Models first: when the active tab's path changes the editor looks its
@@ -15,6 +17,7 @@ async function followRelocation(oldPath: string, newPath: string, dirsToRefresh:
   // which would drop unsaved edits.
   rebaseModels(oldPath, newPath);
   useEditorStore.getState().rebasePaths(oldPath, newPath);
+  usePinGroupStore.getState().rebasePaths(oldPath, newPath);
   const explorer = useExplorerStore.getState();
   explorer.rebasePaths(oldPath, newPath);
   await Promise.all(dirsToRefresh.map((dir) => explorer.refresh(dir)));
@@ -104,6 +107,7 @@ export async function deletePath(path: string, isDir: boolean, parentDir: string
   const closing = affectedTabs.map((t) => t.path);
   closing.forEach(disposeModel);
   useEditorStore.getState().closeTabs(closing);
+  usePinGroupStore.getState().forgetPathsUnder(path);
 
   const explorer = useExplorerStore.getState();
   explorer.forgetPath(path);

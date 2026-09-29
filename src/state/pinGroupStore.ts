@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import { findGroupByName, normalizeGroupName, type PinGroup } from "../lib/pinGroups";
+import {
+  findGroupByName,
+  normalizeGroupName,
+  rebaseGroupPaths,
+  removeGroupPathsUnder,
+  type PinGroup,
+} from "../lib/pinGroups";
 
 interface PinGroupState {
   /** The workspace these groups belong to; null until one is loaded. */
@@ -25,6 +31,13 @@ interface PinGroupState {
   /** Empties a group, keeping the group itself. */
   clearGroup: (id: string) => void;
   setActiveGroup: (id: string | null) => void;
+  /** Follows a rename or move made in the app (a folder carries its contents). */
+  rebasePaths: (from: string, to: string) => void;
+  /**
+   * Drops a path deleted from within the app (a folder drops its contents).
+   * Files deleted outside the app stay listed, shown as missing.
+   */
+  forgetPathsUnder: (path: string) => void;
 }
 
 let nextId = 0;
@@ -92,4 +105,8 @@ export const usePinGroupStore = create<PinGroupState>((set, get) => ({
     set((state) => ({ groups: state.groups.map((g) => (g.id === id ? { ...g, paths: [] } : g)) })),
 
   setActiveGroup: (id) => set({ activeGroupId: id }),
+
+  rebasePaths: (from, to) => set((state) => ({ groups: rebaseGroupPaths(state.groups, from, to) })),
+
+  forgetPathsUnder: (path) => set((state) => ({ groups: removeGroupPathsUnder(state.groups, path) })),
 }));
