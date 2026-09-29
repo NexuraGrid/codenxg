@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export type ContextMenuEntry =
-  | { type: "item"; label: string; shortcut?: string; disabled?: boolean; onSelect: () => void }
+  | { type: "item"; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }
+  | { type: "submenu"; label: string; disabled?: boolean; entries: ContextMenuEntry[] }
   | { type: "separator" };
 
 interface ContextMenuProps {
@@ -67,26 +68,91 @@ export function ContextMenu({ x, y, entries, onClose }: ContextMenuProps) {
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      {entries.map((entry, i) =>
-        entry.type === "separator" ? (
-          <div key={i} className="context-menu__separator" role="separator" />
-        ) : (
+      <MenuEntries entries={entries} onClose={onClose} />
+    </div>,
+    document.body,
+  );
+}
+
+function MenuEntries({ entries, onClose }: { entries: ContextMenuEntry[]; onClose: () => void }) {
+  const [openSubmenu, setOpenSubmenu] = useState<number | null>(null);
+  return (
+    <>
+      {entries.map((entry, i) => {
+        if (entry.type === "separator") return <div key={i} className="context-menu__separator" role="separator" />;
+        if (entry.type === "submenu") {
+          return (
+            <Submenu
+              key={i}
+              entry={entry}
+              open={openSubmenu === i}
+              onOpen={() => setOpenSubmenu(i)}
+              onClose={onClose}
+            />
+          );
+        }
+        return (
           <button
             key={i}
             className="context-menu__item"
-            role="menuitem"
+            role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
+            aria-checked={entry.checked}
             disabled={entry.disabled}
+            onPointerEnter={() => setOpenSubmenu(null)}
             onClick={() => {
               onClose();
               entry.onSelect();
             }}
           >
-            <span>{entry.label}</span>
+            <span className="context-menu__label">
+              {entry.checked !== undefined && <span className="context-menu__check">{entry.checked ? "✓" : ""}</span>}
+              {entry.label}
+            </span>
             {entry.shortcut && <kbd className="context-menu__shortcut">{entry.shortcut}</kbd>}
           </button>
-        ),
+        );
+      })}
+    </>
+  );
+}
+
+interface SubmenuProps {
+  entry: Extract<ContextMenuEntry, { type: "submenu" }>;
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}
+
+/** A nested menu beside its item, opened on hover or click; flips left near the window's right edge. */
+function Submenu({ entry, open, onOpen, onClose }: SubmenuProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [flip, setFlip] = useState(false);
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+    const { right } = panel.getBoundingClientRect();
+    setFlip(right > window.innerWidth - VIEWPORT_MARGIN);
+  }, [open]);
+
+  return (
+    <div className="context-menu__submenu-anchor" onPointerEnter={() => !entry.disabled && onOpen()}>
+      <button
+        className="context-menu__item"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={entry.disabled}
+        onClick={onOpen}
+      >
+        <span>{entry.label}</span>
+        <span className="context-menu__arrow">›</span>
+      </button>
+      {open && (
+        <div ref={panelRef} className={`context-menu context-menu__submenu${flip ? " is-flipped" : ""}`} role="menu">
+          <MenuEntries entries={entry.entries} onClose={onClose} />
+        </div>
       )}
-    </div>,
-    document.body,
+    </div>
   );
 }

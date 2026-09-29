@@ -6,6 +6,10 @@ import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
 import { CloseIcon, GearIcon, PinIcon } from "./icons";
 import { WindowControls } from "./WindowControls";
+import { PinGroupSwitcher } from "./PinGroupSwitcher";
+import { usePinGroupStore } from "../state/pinGroupStore";
+import { isPersistableTab } from "../lib/persistedTabs";
+import { addFileToGroup, createGroupFromPrompt } from "../lib/pinGroupActions";
 
 interface MenuState {
   x: number;
@@ -27,6 +31,7 @@ export function EditorTabs() {
   const setActiveTab = useEditorStore((s) => s.setActiveTab);
   const makePermanent = useEditorStore((s) => s.makePermanent);
   const setPinned = useEditorStore((s) => s.setPinned);
+  const pinGroups = usePinGroupStore((s) => s.groups);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -77,11 +82,49 @@ export function EditorTabs() {
       { type: "item", label: "Close All", onSelect: () => run("all", target) },
       { type: "separator" },
       { type: "item", label: isPinned ? "Unpin" : "Pin", onSelect: () => setPinned(target, !isPinned) },
+      ...(tabs[index] && isPersistableTab(tabs[index]) ? pinGroupEntries(target) : []),
     ];
+  }
+
+  function pinGroupEntries(target: string): ContextMenuEntry[] {
+    const containing = pinGroups.filter((g) => g.paths.includes(target));
+    const entries: ContextMenuEntry[] = [
+      {
+        type: "submenu",
+        label: "Add to Pin Group",
+        entries: [
+          ...pinGroups.map(
+            (g): ContextMenuEntry => ({
+              type: "item",
+              label: g.name,
+              checked: g.paths.includes(target),
+              disabled: g.paths.includes(target),
+              onSelect: () => addFileToGroup(g.id, target),
+            }),
+          ),
+          ...(pinGroups.length > 0 ? [{ type: "separator" } as const] : []),
+          { type: "item", label: "New Group…", onSelect: () => void createGroupFromPrompt([target]) },
+        ],
+      },
+    ];
+    if (containing.length > 0) {
+      const remove = usePinGroupStore.getState().removeFile;
+      entries.push(
+        containing.length === 1
+          ? { type: "item", label: `Remove from "${containing[0].name}"`, onSelect: () => remove(containing[0].id, target) }
+          : {
+              type: "submenu",
+              label: "Remove from Group",
+              entries: containing.map((g) => ({ type: "item", label: g.name, onSelect: () => remove(g.id, target) })),
+            },
+      );
+    }
+    return entries;
   }
 
   return (
     <header className="tabs">
+      <PinGroupSwitcher />
       <div className="tabs__list">
         {tabs.map((tab) => (
           <div

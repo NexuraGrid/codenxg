@@ -1,6 +1,7 @@
 import { basename } from "./paths";
 import { languageFromPath } from "./language";
 import type { EditorTab } from "../state/editorStore";
+import { sanitizePinGroups, type PinGroup } from "./pinGroups";
 
 export interface PersistedTab {
   path: string;
@@ -16,6 +17,14 @@ export interface WorkspaceTabsRecord {
   activeTabPath: string | null;
   /** Epoch ms; used only to evict the least-recently-used workspace once capped. */
   lastAccessed: number;
+  /** Absent in records saved before pin groups existed; read as none. */
+  pinGroups?: PinGroup[];
+  activePinGroup?: string | null;
+}
+
+export interface PinGroupsSnapshot {
+  groups: PinGroup[];
+  activeGroupId: string | null;
 }
 
 export type WorkspacesState = Record<string, WorkspaceTabsRecord>;
@@ -33,6 +42,7 @@ export function buildWorkspaceRecord(
   activeTabPath: string | null,
   viewStates: ReadonlyMap<string, unknown>,
   now: number,
+  pins: PinGroupsSnapshot = { groups: [], activeGroupId: null },
 ): WorkspaceTabsRecord {
   const persistable = tabs.filter(isPersistableTab);
 
@@ -48,7 +58,15 @@ export function buildWorkspaceRecord(
     }),
     activeTabPath: persistable.some((t) => t.path === activeTabPath) ? activeTabPath : null,
     lastAccessed: now,
+    ...(pins.groups.length > 0 ? { pinGroups: pins.groups, activePinGroup: pins.activeGroupId } : {}),
   };
+}
+
+/** A record's pin groups, tolerating records without any (or with junk). */
+export function readPinGroups(record: WorkspaceTabsRecord | undefined): PinGroupsSnapshot {
+  const groups = sanitizePinGroups(record?.pinGroups);
+  const active = record?.activePinGroup;
+  return { groups, activeGroupId: groups.some((g) => g.id === active) ? (active as string) : null };
 }
 
 /** Caps `state` to the `max` most recently accessed workspaces; `root` is always kept. */

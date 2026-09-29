@@ -15,6 +15,8 @@ export interface DialogRequest<T extends string> {
   cancelValue: T;
   /** Shows an indeterminate progress bar: something is still running. */
   busy?: boolean;
+  /** Shows a text field; Enter picks the primary button. Read it from `inputValue`. */
+  input?: { initialValue?: string; placeholder?: string };
 }
 
 interface OpenDialog {
@@ -24,11 +26,16 @@ interface OpenDialog {
 
 interface DialogState {
   current: OpenDialog | null;
+  /** The text field's contents, for dialogs with `input`. */
+  inputValue: string;
+  setInputValue: (value: string) => void;
   close: (value: string) => void;
 }
 
 export const useDialogStore = create<DialogState>((set, get) => ({
   current: null,
+  inputValue: "",
+  setInputValue: (inputValue) => set({ inputValue }),
   close: (value) => {
     const current = get().current;
     if (!current) return;
@@ -46,10 +53,32 @@ export function showDialog<T extends string>(request: DialogRequest<T>): Promise
 
   return new Promise<T>((resolve) => {
     useDialogStore.setState({
+      inputValue: request.input?.initialValue ?? "",
       current: {
         request: request as DialogRequest<string>,
         resolve: (value) => resolve(value as T),
       },
     });
   });
+}
+
+/** Asks for a line of text; null when cancelled. The text is returned trimmed. */
+export async function promptText(options: {
+  title: string;
+  message?: string;
+  initialValue?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+}): Promise<string | null> {
+  const choice = await showDialog({
+    title: options.title,
+    message: options.message,
+    input: { initialValue: options.initialValue, placeholder: options.placeholder },
+    buttons: [
+      { label: options.confirmLabel ?? "OK", value: "ok", variant: "primary" },
+      { label: "Cancel", value: "cancel" },
+    ],
+    cancelValue: "cancel",
+  });
+  return choice === "ok" ? useDialogStore.getState().inputValue.trim() : null;
 }

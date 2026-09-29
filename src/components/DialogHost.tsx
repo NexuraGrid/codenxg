@@ -5,12 +5,20 @@ import { useDialogStore } from "../state/dialogStore";
 export function DialogHost() {
   const current = useDialogStore((s) => s.current);
   const close = useDialogStore((s) => s.close);
+  const inputValue = useDialogStore((s) => s.inputValue);
+  const setInputValue = useDialogStore((s) => s.setInputValue);
   const focusRef = useRef<HTMLButtonElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!current) return;
     const previousFocus = document.activeElement as HTMLElement | null;
-    focusRef.current?.focus();
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    } else {
+      focusRef.current?.focus();
+    }
 
     // Capture phase so Monaco/xterm don't also react to Escape/Enter.
     function onKeyDown(event: KeyboardEvent) {
@@ -48,6 +56,22 @@ export function DialogHost() {
           {request.title}
         </h2>
         {request.message && <p className="dialog__message">{request.message}</p>}
+        {request.input && (
+          <input
+            ref={inputRef}
+            className="dialog__input"
+            value={inputValue}
+            placeholder={request.input.placeholder}
+            spellCheck={false}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              const primary = request.buttons.find((b) => b.variant === "primary");
+              if (primary) close(primary.value);
+            }}
+          />
+        )}
         {request.busy && <div className="dialog__progress" role="progressbar" aria-label="In progress" />}
         <div className="dialog__actions">
           {request.buttons.map((button) => (

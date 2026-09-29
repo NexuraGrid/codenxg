@@ -10,6 +10,7 @@ import { SourceControl } from "./SourceControl";
 import { SearchPanel } from "./SearchPanel";
 import { useGitStore } from "../state/gitStore";
 import { useEditorStore } from "../state/editorStore";
+import { usePinGroupStore } from "../state/pinGroupStore";
 import { FilesIcon, FolderOpenIcon, GearIcon, GitIcon, GlobeIcon, PencilIcon, SearchIcon, TerminalIcon } from "./icons";
 import { QuickOpen } from "./QuickOpen";
 import { useHotkey } from "../lib/useHotkey";
@@ -85,8 +86,14 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
         scheduleSaveWorkspaceTabs(workspaceRoot);
       }
     });
+    const unsubscribePins = usePinGroupStore.subscribe((state, previous) => {
+      if (state.root === workspaceRoot && (state.groups !== previous.groups || state.activeGroupId !== previous.activeGroupId)) {
+        scheduleSaveWorkspaceTabs(workspaceRoot);
+      }
+    });
     return () => {
       unsubscribe();
+      unsubscribePins();
       // A switch away from this workspace resets the (shared) editor store,
       // which would otherwise schedule a save for this root; see
       // cancelScheduledSave's own comment for why that must not fire later.

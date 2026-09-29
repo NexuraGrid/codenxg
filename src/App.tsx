@@ -10,6 +10,7 @@ import { DialogHost } from "./components/DialogHost";
 import { disposeAllModels } from "./lib/monacoModelRegistry";
 import { pickFolder, rememberWorkspace, restoreLastWorkspace } from "./lib/workspace";
 import { useEditorStore } from "./state/editorStore";
+import { usePinGroupStore } from "./state/pinGroupStore";
 import { useSettingsStore } from "./state/settingsStore";
 import { useTerminalStore } from "./state/terminalStore";
 import { checkForUpdates } from "./lib/updater";
@@ -85,6 +86,7 @@ function App() {
     if (workspaceRoot) {
       disposeAllModels();
       useEditorStore.getState().reset();
+      usePinGroupStore.getState().reset();
       useTerminalStore.getState().closeAll();
     }
 

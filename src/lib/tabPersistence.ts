@@ -4,7 +4,8 @@ import { useEditorStore } from "../state/editorStore";
 import { getActiveEditor } from "./editorInstance";
 import { pathOfModel } from "./monacoModelRegistry";
 import { allViewStates, setViewState } from "./tabViewState";
-import { buildWorkspaceRecord, planRestoreTabs, upsertWorkspaceState, type WorkspacesState } from "./persistedTabs";
+import { buildWorkspaceRecord, planRestoreTabs, readPinGroups, upsertWorkspaceState, type WorkspacesState } from "./persistedTabs";
+import { usePinGroupStore } from "../state/pinGroupStore";
 
 const SAVE_DEBOUNCE_MS = 500;
 
@@ -32,7 +33,7 @@ async function ensureCache(): Promise<WorkspacesState> {
 }
 
 /** Lists each tab's parent folder once (no file reads), so a moved/deleted file is skipped silently. */
-async function existingPaths(paths: string[]): Promise<Set<string>> {
+export async function existingPaths(paths: string[]): Promise<Set<string>> {
   const byDir = new Map<string, string[]>();
   for (const path of paths) {
     const dir = dirname(path);
@@ -61,6 +62,8 @@ async function existingPaths(paths: string[]): Promise<Set<string>> {
 export async function restoreWorkspaceTabs(root: string): Promise<void> {
   const state = await ensureCache();
   const record = state[root];
+  const pins = readPinGroups(record);
+  usePinGroupStore.getState().load(root, pins.groups, pins.activeGroupId);
   if (!record || record.tabs.length === 0) return;
 
   const existing = await existingPaths(record.tabs.map((t) => t.path));
@@ -91,7 +94,10 @@ async function flushWorkspaceTabs(root: string): Promise<void> {
   captureActiveViewState();
   const state = await ensureCache();
   const { tabs, activeTabPath } = useEditorStore.getState();
-  const record = buildWorkspaceRecord(tabs, activeTabPath, allViewStates(), Date.now());
+  // Until restore has loaded this workspace's groups, keep the saved ones.
+  const pinStore = usePinGroupStore.getState();
+  const pins = pinStore.root === root ? pinStore : readPinGroups(state[root]);
+  const record = buildWorkspaceRecord(tabs, activeTabPath, allViewStates(), Date.now(), pins);
   const next = upsertWorkspaceState(state, root, record);
   cache = next;
   try {
