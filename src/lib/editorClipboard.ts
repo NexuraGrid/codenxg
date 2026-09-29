@@ -22,10 +22,25 @@ let lastCopy: { text: string; pieces: string[]; wholeLines: boolean } | null = n
  */
 export function installEditorClipboard(editor: monacoTypes.editor.IStandaloneCodeEditor, monaco: Monaco): void {
   const { KeyMod, KeyCode } = monaco;
+  // Actions rather than addCommand: Monaco registers addCommand keybindings
+  // globally, so with an editor per editor group the last one created would
+  // handle every editor's Ctrl+C. Actions are scoped to their own editor.
   // editorTextFocus: the find widget's own input keeps its native shortcuts.
-  editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyC, () => void copy(editor), "editorTextFocus");
-  editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyX, () => void cut(editor), "editorTextFocus");
-  editor.addCommand(KeyMod.CtrlCmd | KeyCode.KeyV, () => void paste(editor), "editorTextFocus");
+  const shortcuts = [
+    ["codenxg.clipboard.copy", "Copy", KeyCode.KeyC, copy],
+    ["codenxg.clipboard.cut", "Cut", KeyCode.KeyX, cut],
+    ["codenxg.clipboard.paste", "Paste", KeyCode.KeyV, paste],
+  ] as const;
+  for (const [id, label, key, action] of shortcuts) {
+    const disposable = editor.addAction({
+      id,
+      label,
+      keybindings: [KeyMod.CtrlCmd | key],
+      keybindingContext: "editorTextFocus",
+      run: (target) => void action(target),
+    });
+    editor.onDidDispose(() => disposable.dispose());
+  }
   installContextMenuClipboard(editor, monaco);
 }
 
