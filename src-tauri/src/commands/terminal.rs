@@ -12,6 +12,9 @@ const READ_BUFFER_SIZE: usize = 64 * 1024;
 
 // Every terminal command is `async`: Tauri runs synchronous commands on the
 // main thread, so each keystroke would otherwise compete with the UI.
+// Each argument is a separate IPC field sent by the webview; bundling them
+// into a struct would change the command's wire format for no gain.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(async)]
 pub fn create_terminal(
     app: AppHandle,

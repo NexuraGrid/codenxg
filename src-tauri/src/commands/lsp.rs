@@ -10,10 +10,13 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 
+/// A server binary and the arguments it is launched with.
+type ServerCandidate = (&'static str, &'static [&'static str]);
+
 /// Language servers the editor knows how to run, first match wins. Only these
 /// are ever spawned: the webview names a language, never a command. Keys are
 /// Monaco language ids.
-const SERVERS: &[(&str, &[(&str, &[&str])])] = &[
+const SERVERS: &[(&str, &[ServerCandidate])] = &[
     ("php", &[("intelephense", &["--stdio"])]),
     (
         "python",
@@ -1323,6 +1326,7 @@ mod tests {
             }
         };
         let _ = child.kill();
+        let _ = child.wait();
         assert!(response.contains("capabilities"), "{response}");
     }
 

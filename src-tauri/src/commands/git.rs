@@ -1016,8 +1016,8 @@ mod tests {
 
     #[test]
     fn reads_log_records_with_refs() {
-        let raw = "aaa111\0aaa\0feat: x, y\0Ana\01700000000\0HEAD -> main, origin/main\x1e\n\
-                   bbb222\0bbb\0first\0Ana\01690000000\0\x1e\n";
+        let raw = "aaa111\0aaa\0feat: x, y\0Ana\x001700000000\0HEAD -> main, origin/main\x1e\n\
+                   bbb222\0bbb\0first\0Ana\x001690000000\0\x1e\n";
         let log = parse_log(raw);
 
         assert_eq!(log.len(), 2);
@@ -1133,8 +1133,8 @@ mod tests {
 
     #[test]
     fn parses_a_stash_list_with_two_entries() {
-        let raw = "stash@{0}\0On main: wip feature\01700000000\x1e\n\
-                   stash@{1}\0WIP on main: 1a2b3c4 older commit\01690000000\x1e\n";
+        let raw = "stash@{0}\0On main: wip feature\x001700000000\x1e\n\
+                   stash@{1}\0WIP on main: 1a2b3c4 older commit\x001690000000\x1e\n";
         let stashes = parse_stash_list(raw);
 
         assert_eq!(stashes.len(), 2);
@@ -1148,7 +1148,7 @@ mod tests {
 
     #[test]
     fn skips_a_stash_list_record_missing_its_timestamp() {
-        let raw = "stash@{0}\0On main: wip feature\x1e\nstash@{1}\0On main: ok\01690000000\x1e\n";
+        let raw = "stash@{0}\0On main: wip feature\x1e\nstash@{1}\0On main: ok\x001690000000\x1e\n";
         let stashes = parse_stash_list(raw);
 
         assert_eq!(stashes.len(), 1);
