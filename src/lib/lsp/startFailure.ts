@@ -16,3 +16,18 @@ export function parseStartFailure(error: string): MissingServer | null {
   const hint = installable ? rest.slice("installable:".length) : rest;
   return { hint, command: hint.split("   ")[0], installable };
 }
+
+/** A tool the server's install (or the server itself) needs but isn't there. */
+export interface MissingTool {
+  /** The program looked for: npm, go, rustup, java. */
+  tool: string;
+  /** What to install and where to get it, e.g. "Node.js with npm (https://nodejs.org)". */
+  requires: string;
+}
+
+/** Parses lsp_install's / lsp_start's `tool-missing:<tool>:<requires>`; null otherwise. */
+export function parseToolMissing(error: string): MissingTool | null {
+  const match = error.match(/tool-missing:([^:]+):(.*)$/s);
+  if (!match) return null;
+  return { tool: match[1], requires: match[2] };
+}

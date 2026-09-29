@@ -4164,13 +4164,17 @@ dependencies = [
 name = "tauri-app"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "globset",
  "ignore",
  "notify",
  "portable-pty",
  "regex",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",

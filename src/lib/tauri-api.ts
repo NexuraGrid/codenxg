@@ -333,16 +333,24 @@ export function gitStashFileDiff(index: number, path: string, origPath: string |
   return invoke("git_stash_file_diff", { index, path, origPath });
 }
 
-/** Starts the language server for `language`; resolves to its name. */
-export function lspStart(language: string, onMessage: (json: string) => void): Promise<string> {
+export interface LspStarted {
+  /** The server that was started, e.g. "intelephense". */
+  name: string;
+  /** Machine-specific `initialize` options (Vue's TypeScript path), if any. */
+  initializationOptions?: object;
+}
+
+/** Starts the language server for `language`. */
+export function lspStart(language: string, onMessage: (json: string) => void): Promise<LspStarted> {
   const channel = new Channel<string>();
   channel.onmessage = onMessage;
   return invoke("lsp_start", { language, onMessage: channel });
 }
 
 /**
- * Installs the language server for `language` with its fixed npm command.
- * Rejects with "npm-missing", "not-installable", or npm's error output.
+ * Installs the language server for `language` with its fixed, allow-listed
+ * recipe. Rejects with "not-installable", "tool-missing:<tool>:<requires>",
+ * or the installer's error output.
  */
 export function lspInstall(language: string): Promise<void> {
   return invoke("lsp_install", { language });

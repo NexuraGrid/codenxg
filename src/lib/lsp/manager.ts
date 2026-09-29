@@ -41,13 +41,12 @@ import {
 import { ensureModelsForLocations, releaseUnusedLoanedModels } from "./referenceModels";
 import { toRenameLocation } from "./rename";
 import type { ResourceOperation } from "./workspaceEdit";
-import { lspInstall, lspSend, lspStart, lspStop } from "../tauri-api";
+import { lspInstall, lspSend, lspStart, lspStop, type LspStarted } from "../tauri-api";
 import { basename, pathFromUri } from "../paths";
 import { showDialog, useDialogStore, type DialogRequest } from "../../state/dialogStore";
-import { parseStartFailure } from "./startFailure";
+import { parseStartFailure, parseToolMissing, type MissingTool } from "./startFailure";
+import { SERVED_LANGUAGES } from "./servedLanguages";
 
-/** Monaco language ids served by an external language server. */
-const SERVED_LANGUAGES = ["php", "python", "java", "go"];
 // Servers like jdtls hold hundreds of MB: stop them once their files are closed.
 const IDLE_STOP_MS = 3 * 60 * 1000;
 
@@ -96,8 +95,9 @@ class LanguageSession {
       onRequest: (method, params) => this.onRequest(method, params),
     });
 
+    let started: LspStarted;
     try {
-      await lspStart(this.language, (json) => this.client.receive(json));
+      started = await lspStart(this.language, (json) => this.client.receive(json));
     } catch (error) {
       void explainStartFailure(this.language, String(error), this.restart);
       return false;
@@ -110,7 +110,7 @@ class LanguageSession {
       rootPath: this.root,
       workspaceFolders: [{ uri: rootUri, name: basename(this.root) }],
       capabilities: CLIENT_CAPABILITIES,
-      initializationOptions: INITIALIZATION_OPTIONS[this.language],
+      initializationOptions: started.initializationOptions ?? INITIALIZATION_OPTIONS[this.language],
     });
     this.capabilities = result.capabilities ?? {};
     this.client.notify("initialized", {});
@@ -568,6 +568,12 @@ async function explainStartFailure(language: string, error: string, restart: () 
   // Once per language per session: not having a server is a choice, not an emergency.
   if (noticesShown.has(language)) return;
   noticesShown.add(language);
+  const tool = parseToolMissing(error);
+  if (tool) {
+    // The server is there but can't run (jdtls without a new enough Java).
+    await explainMissingTool(language, tool);
+    return;
+  }
   const missing = parseStartFailure(error);
   if (!missing) {
     console.error(`[lsp ${language}]`, error);
@@ -590,7 +596,7 @@ async function explainStartFailure(language: string, error: string, restart: () 
 
   const choice = await showDialog({
     title,
-    message: `Install it now? This runs:\n\n${missing.command}`,
+    message: `Install it now? ${describeInstall(missing.command)}`,
     buttons: [
       { label: "Install", value: "install", variant: "primary" },
       { label: "Copy command", value: "copy" },
@@ -602,6 +608,34 @@ async function explainStartFailure(language: string, error: string, restart: () 
   if (choice === "install") await installServer(language, missing.command, restart);
 }
 
+/**
+ * Explains that `tool` must be installed first. `command` is the server's
+ * install, offered for copying when it's something to run in a terminal.
+ */
+async function explainMissingTool(language: string, tool: MissingTool, command?: string): Promise<void> {
+  const runnable = command && !command.startsWith("download ") ? command : undefined;
+  const next = runnable ? `then run:\n\n${runnable}` : "then reopen the file to try again.";
+  const choice = await showDialog({
+    title: `${tool.requires.split(" (")[0]} is required`,
+    message: `The ${language} language server needs ${tool.requires}. Install it, ${next}`,
+    buttons: runnable
+      ? [
+          { label: "Copy command", value: "copy", variant: "primary" },
+          { label: "Close", value: "close" },
+        ]
+      : [{ label: "Close", value: "close", variant: "primary" }],
+    cancelValue: "close",
+  });
+  if (choice === "copy" && runnable) await copyCommand(runnable);
+}
+
+// jdtls isn't a command but a download (see lsp.rs RECIPES).
+function describeInstall(command: string): string {
+  return command.startsWith("download ")
+    ? `This downloads the official build into the app's data folder:\n\n${command.slice("download ".length)}`
+    : `This runs:\n\n${command}`;
+}
+
 async function copyCommand(command: string): Promise<void> {
   await writeText(command).catch(console.error);
 }
@@ -611,7 +645,7 @@ async function installServer(language: string, command: string, restart: () => v
   // "Hide" only dismisses the dialog: the install keeps running.
   const progress: DialogRequest<"hide"> = {
     title: `Installing the ${language} language server…`,
-    message: `Running: ${command}`,
+    message: describeInstall(command),
     buttons: [{ label: "Hide", value: "hide" }],
     cancelValue: "hide",
     busy: true,
@@ -622,12 +656,14 @@ async function installServer(language: string, command: string, restart: () => v
     await lspInstall(language);
   } catch (error) {
     const reason = String(error);
+    const tool = parseToolMissing(reason);
+    if (tool) {
+      await explainMissingTool(language, tool, command);
+      return;
+    }
     const choice = await showDialog({
-      title: reason === "npm-missing" ? "Node.js and npm are required" : `Couldn't install the ${language} language server`,
-      message:
-        reason === "npm-missing"
-          ? `The ${language} language server is installed with npm, which comes with Node.js (nodejs.org). Once Node.js is installed, run:\n\n${command}`
-          : `${reason}\n\nYou can run it yourself from a terminal:\n\n${command}`,
+      title: `Couldn't install the ${language} language server`,
+      message: `${reason}\n\nYou can run it yourself from a terminal:\n\n${command}`,
       buttons: [
         { label: "Copy command", value: "copy", variant: "primary" },
         { label: "Close", value: "close" },

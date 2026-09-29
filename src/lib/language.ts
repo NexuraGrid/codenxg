@@ -1,10 +1,10 @@
 import * as monaco from "monaco-editor";
 
 // Formats Monaco has no tokenizer for, mapped to the closest built-in one.
-// Vue/Svelte/Astro single-file components are HTML at the top level, and
+// Svelte/Astro single-file components are HTML at the top level, and
 // Monaco's HTML tokenizer already delegates <script>/<style> to JS/CSS.
+// (Vue gets its own id, see registerVueLanguage.)
 const FALLBACK_BY_EXTENSION: Record<string, string> = {
-  vue: "html",
   svelte: "html",
   astro: "html",
   toml: "ini",
@@ -50,4 +50,21 @@ export function languageFromPath(path: string): string {
   }
 
   return "plaintext";
+}
+
+/**
+ * `.vue` files get their own language id — highlighted with Monaco's HTML
+ * grammar — so the Vue language server (not Monaco's HTML worker) serves
+ * them. Must run before the first languageFromPath call.
+ */
+export function registerVueLanguage(): void {
+  if (monaco.languages.getLanguages().some((l) => l.id === "vue")) return;
+  monaco.languages.register({ id: "vue", extensions: [".vue"], aliases: ["Vue", "vue"] });
+  monaco.languages.onLanguage("vue", () => {
+    void import("monaco-editor/languages/definitions/html/html.js").then(({ conf, language }) => {
+      monaco.languages.setLanguageConfiguration("vue", conf);
+      monaco.languages.setMonarchTokensProvider("vue", language);
+    });
+  });
+  byExtension = null;
 }
