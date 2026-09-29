@@ -19,6 +19,7 @@ import { connectLanguageServers } from "../lib/lsp/manager";
 import { getActiveEditor } from "../lib/editorInstance";
 import { prefillFromSelection } from "../lib/searchQuery";
 import { openSettingsTab } from "../lib/settingsTab";
+import { canToggleMarkdownPreview, toggleMarkdownPreview } from "../lib/markdownPreview";
 import { cancelScheduledSave, flushWorkspaceTabsNow, restoreWorkspaceTabs, scheduleSaveWorkspaceTabs } from "../lib/tabPersistence";
 import { usePaletteStore } from "../state/paletteStore";
 import { useSearchStore } from "../state/searchStore";
@@ -28,6 +29,12 @@ import { useTerminalStore } from "../state/terminalStore";
 // leave them to the terminal while it has focus.
 const outsideTerminal = (event: KeyboardEvent) =>
   !(event.target instanceof Element && event.target.closest(".xterm"));
+
+// An <input>/<textarea> outside Monaco (whose own input is a textarea).
+const inPlainTextField = (event: KeyboardEvent) =>
+  event.target instanceof Element &&
+  event.target.matches("input, textarea") &&
+  !event.target.closest(".monaco-editor");
 
 type SidebarView = "files" | "search" | "git" | "web";
 
@@ -147,6 +154,12 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
   });
 
   useHotkey("mod+,", openSettingsTab, { capture: true });
+  // Ctrl+Shift+V: Markdown preview. Plain Ctrl+V (paste) never matches, and
+  // the terminal and text fields keep their own Ctrl+Shift+V paste.
+  useHotkey("mod+shift+v", toggleMarkdownPreview, {
+    capture: true,
+    when: (event) => outsideTerminal(event) && !inPlainTextField(event) && canToggleMarkdownPreview(),
+  });
 
   return (
     <main className="app" data-tauri-drag-region>

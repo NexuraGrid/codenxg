@@ -18,6 +18,8 @@ import { DiffView } from "./DiffView";
 import { CommitDiffView } from "./CommitDiffView";
 import { StashDiffView } from "./StashDiffView";
 import { SettingsView } from "./SettingsView";
+import { MarkdownPreview } from "./MarkdownPreview";
+import { openMarkdownPreview } from "../lib/markdownPreview";
 
 export function MonacoEditor() {
   const editorRef = useRef<monacoTypes.editor.IStandaloneCodeEditor | null>(null);
@@ -111,6 +113,17 @@ export function MonacoEditor() {
     editorRef.current = editor;
     setActiveEditor(editor);
     installEditorClipboard(editor, monaco);
+    // Ctrl+K V: VS Code's "open preview to the side". There are no split
+    // editor groups, so it opens the preview as a tab, like Ctrl+Shift+V.
+    editor.addCommand(
+      monaco.KeyMod.chord(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, monaco.KeyCode.KeyV),
+      () => {
+        const model = editor.getModel();
+        const path = model ? pathOfModel(model) : undefined;
+        if (path) openMarkdownPreview(path);
+      },
+      "editorLangId == markdown",
+    );
     const detachGutter = attachGitGutter(editor);
     // The editor unmounts when the last tab closes; don't leave a disposed
     // instance reachable from the palette.
@@ -134,6 +147,10 @@ export function MonacoEditor() {
 
   if (activeTab.settings) {
     return <SettingsView />;
+  }
+
+  if (activeTab.markdownPreview) {
+    return <MarkdownPreview key={activeTab.path} source={activeTab.markdownPreview.source} />;
   }
 
   if (activeTab.commit) {

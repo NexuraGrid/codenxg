@@ -24,7 +24,7 @@ export const MAX_REMEMBERED_WORKSPACES = 20;
 
 /** A tab worth remembering across restarts: a real file, not a synthetic view. */
 export function isPersistableTab(tab: EditorTab): boolean {
-  return !tab.commit && !tab.stash && !tab.settings;
+  return !tab.commit && !tab.stash && !tab.settings && !tab.markdownPreview;
 }
 
 /** Builds the record to persist for one workspace from its current tabs. */

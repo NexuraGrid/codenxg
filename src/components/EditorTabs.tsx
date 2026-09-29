@@ -1,6 +1,7 @@
 import { useCallback, useState, type MouseEvent } from "react";
-import { useEditorStore } from "../state/editorStore";
+import { useEditorStore, type EditorTab } from "../state/editorStore";
 import { closeTabs, pathsToClose, type TabCloseAction } from "../lib/tabActions";
+import { isMarkdownSourceTab, openMarkdownPreview } from "../lib/markdownPreview";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { FileIcon } from "./FileIcon";
 import { CloseIcon, GearIcon, PinIcon } from "./icons";
@@ -10,6 +11,14 @@ interface MenuState {
   x: number;
   y: number;
   path: string;
+}
+
+function tabTooltip(tab: EditorTab): string {
+  if (tab.settings) return "Settings";
+  if (tab.markdownPreview) return `Preview of ${tab.markdownPreview.source}`;
+  if (tab.commit) return `${tab.commit.file} @ ${tab.commit.shortHash}`;
+  if (tab.stash) return `${tab.stash.file} @ stash#${tab.stash.index}`;
+  return tab.path;
 }
 
 export function EditorTabs() {
@@ -49,7 +58,12 @@ export function EditorTabs() {
   function menuEntries(target: string): ContextMenuEntry[] {
     const index = tabs.findIndex((t) => t.path === target);
     const isPinned = Boolean(tabs[index]?.isPinned);
+    const preview: ContextMenuEntry[] =
+      tabs[index] && isMarkdownSourceTab(tabs[index])
+        ? [{ type: "item", label: "Open Preview", onSelect: () => openMarkdownPreview(target) }, { type: "separator" }]
+        : [];
     return [
+      ...preview,
       { type: "item", label: "Close", onSelect: () => run("close", target) },
       { type: "item", label: "Close Others", disabled: tabs.length < 2, onSelect: () => run("others", target) },
       { type: "item", label: "Close to the Left", disabled: index <= 0, onSelect: () => run("left", target) },
@@ -73,15 +87,7 @@ export function EditorTabs() {
           <div
             key={tab.path}
             className={`tab${tab.path === activeTabPath ? " is-active" : ""}${tab.isPreview ? " is-preview" : ""}${tab.isPinned ? " is-pinned" : ""}`}
-            title={
-              tab.settings
-                ? "Settings"
-                : tab.commit
-                  ? `${tab.commit.file} @ ${tab.commit.shortHash}`
-                  : tab.stash
-                    ? `${tab.stash.file} @ stash#${tab.stash.index}`
-                    : tab.path
-            }
+            title={tabTooltip(tab)}
             onClick={() => setActiveTab(tab.path)}
             onDoubleClick={() => makePermanent(tab.path)}
             onAuxClick={(e) => handleAuxClick(e, tab.path)}

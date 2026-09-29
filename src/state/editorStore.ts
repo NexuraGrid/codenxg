@@ -22,6 +22,11 @@ export interface EditorTab {
   /** The Settings view, opened as a tab (Ctrl+, or the gear icon) — not a real file. */
   settings?: boolean;
   /**
+   * A rendered preview of a Markdown file (Ctrl+Shift+V), keyed
+   * `markdown-preview:<source>` so it never collides with the file's own tab.
+   */
+  markdownPreview?: { source: string };
+  /**
    * A preview tab (italic title): single-clicking another file replaces it in
    * place instead of opening a new tab. Editing, saving, double-clicking or
    * pinning it makes it permanent. At most one exists at a time.
@@ -29,6 +34,18 @@ export interface EditorTab {
   isPreview?: boolean;
   /** Pinned tabs sort to the left and survive Close Others/Left/Right/All. */
   isPinned?: boolean;
+}
+
+// Lives here (not in lib/markdownPreview) so rebasePaths can rekey preview tabs.
+export const MARKDOWN_PREVIEW_PREFIX = "markdown-preview:";
+
+function rebaseActivePath(active: string | null, from: string, to: string): string | null {
+  if (!active) return active;
+  if (active.startsWith(MARKDOWN_PREVIEW_PREFIX)) {
+    const source = active.slice(MARKDOWN_PREVIEW_PREFIX.length);
+    return isSameOrInside(source, from) ? `${MARKDOWN_PREVIEW_PREFIX}${rebase(source, from, to)}` : active;
+  }
+  return isSameOrInside(active, from) ? rebase(active, from, to) : active;
 }
 
 /** Pinned tabs first, each group in its current order. */
@@ -132,14 +149,16 @@ export const useEditorStore = create<EditorState>((set) => ({
   rebasePaths: (from, to) =>
     set((state) => ({
       tabs: state.tabs.map((t) => {
+        if (t.markdownPreview) {
+          if (!isSameOrInside(t.markdownPreview.source, from)) return t;
+          const source = rebase(t.markdownPreview.source, from, to);
+          return { ...t, path: `${MARKDOWN_PREVIEW_PREFIX}${source}`, title: `Preview ${basename(source)}`, markdownPreview: { source } };
+        }
         if (!isSameOrInside(t.path, from)) return t;
         const path = rebase(t.path, from, to);
         return { ...t, path, title: basename(path), language: languageFromPath(path) };
       }),
-      activeTabPath:
-        state.activeTabPath && isSameOrInside(state.activeTabPath, from)
-          ? rebase(state.activeTabPath, from, to)
-          : state.activeTabPath,
+      activeTabPath: rebaseActivePath(state.activeTabPath, from, to),
     })),
 
   reset: () => set({ tabs: [], activeTabPath: null }),
