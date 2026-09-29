@@ -192,5 +192,6 @@ describe("app commands", () => {
     const { appCommands, layoutCommands } = await import("../commands/appCommands");
     const all = [...appCommands(), ...layoutCommands(() => { throw new Error("not called"); })];
     expect(new Set(all.map((c) => c.id)).size).toBe(all.length);
-  });
+    // The first import pulls in Monaco, which takes >5s under a full parallel run.
+  }, 30_000);
 });
