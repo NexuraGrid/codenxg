@@ -1,8 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export type ContextMenuEntry =
-  | { type: "item"; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; onSelect: () => void }
+  | {
+      type: "item";
+      label: string;
+      shortcut?: string;
+      disabled?: boolean;
+      checked?: boolean;
+      /** Shown before the label, e.g. a file icon. */
+      icon?: ReactNode;
+      /** Dimmed text after the label, e.g. a file's folder. */
+      detail?: string;
+      /** Nests the item one level under the one above it. */
+      indent?: boolean;
+      onSelect: () => void;
+    }
   | { type: "submenu"; label: string; disabled?: boolean; entries: ContextMenuEntry[] }
   | { type: "separator" };
 
@@ -94,7 +107,7 @@ function MenuEntries({ entries, onClose }: { entries: ContextMenuEntry[]; onClos
         return (
           <button
             key={i}
-            className="context-menu__item"
+            className={`context-menu__item${entry.indent ? " is-indented" : ""}`}
             role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
             aria-checked={entry.checked}
             disabled={entry.disabled}
@@ -106,7 +119,9 @@ function MenuEntries({ entries, onClose }: { entries: ContextMenuEntry[]; onClos
           >
             <span className="context-menu__label">
               {entry.checked !== undefined && <span className="context-menu__check">{entry.checked ? "✓" : ""}</span>}
+              {entry.icon}
               {entry.label}
+              {entry.detail && <span className="context-menu__detail">{entry.detail}</span>}
             </span>
             {entry.shortcut && <kbd className="context-menu__shortcut">{entry.shortcut}</kbd>}
           </button>

@@ -32,6 +32,8 @@ export function EditorTabs() {
   const makePermanent = useEditorStore((s) => s.makePermanent);
   const setPinned = useEditorStore((s) => s.setPinned);
   const pinGroups = usePinGroupStore((s) => s.groups);
+  const activeGroupId = usePinGroupStore((s) => s.activeGroupId);
+  const activeGroup = pinGroups.find((g) => g.id === activeGroupId);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -129,8 +131,8 @@ export function EditorTabs() {
         {tabs.map((tab) => (
           <div
             key={tab.path}
-            className={`tab${tab.path === activeTabPath ? " is-active" : ""}${tab.isPreview ? " is-preview" : ""}${tab.isPinned ? " is-pinned" : ""}`}
-            title={tabTooltip(tab)}
+            className={`tab${tab.path === activeTabPath ? " is-active" : ""}${tab.isPreview ? " is-preview" : ""}${tab.isPinned ? " is-pinned" : ""}${activeGroup?.paths.includes(tab.path) ? " in-group" : ""}`}
+            title={activeGroup?.paths.includes(tab.path) ? `${tabTooltip(tab)} • ${activeGroup.name}` : tabTooltip(tab)}
             onClick={() => setActiveTab(tab.path)}
             onDoubleClick={() => makePermanent(tab.path)}
             onAuxClick={(e) => handleAuxClick(e, tab.path)}

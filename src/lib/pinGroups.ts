@@ -1,4 +1,5 @@
 import type { EditorTab } from "../state/editorStore";
+import { basename, dirname, isSameOrInside } from "./paths";
 
 /** A named set of files, per workspace, that can be opened together as pinned tabs. */
 export interface PinGroup {
@@ -56,4 +57,16 @@ export function sanitizePinGroups(raw: unknown): PinGroup[] {
     groups.push({ id, name, paths: [...new Set(files)] });
   }
   return groups;
+}
+
+/**
+ * How a group's file is listed: its name, plus its folder relative to the
+ * workspace root ("" at the root; the absolute folder when outside it).
+ */
+export function groupFileLabel(path: string, root: string | null): { name: string; dir: string } {
+  const name = basename(path);
+  const dir = dirname(path);
+  if (dir === path || dir === root) return { name, dir: "" };
+  if (root && isSameOrInside(dir, root)) return { name, dir: dir.slice(root.length + 1).replace(/\\/g, "/") };
+  return { name, dir };
 }

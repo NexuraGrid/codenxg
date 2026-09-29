@@ -3,6 +3,7 @@ import { usePinGroupStore } from "../state/pinGroupStore";
 import { useEditorStore } from "../state/editorStore";
 import {
   deleteGroupWithConfirm,
+  openFileFromGroup,
   pinnedFilePaths,
   renameGroupFromPrompt,
   savePinnedTabsAsGroup,
@@ -10,6 +11,9 @@ import {
 } from "../lib/pinGroupActions";
 import { ContextMenu, type ContextMenuEntry } from "./ContextMenu";
 import { ChevronIcon, PinIcon } from "./icons";
+import { FileIcon } from "./FileIcon";
+import { groupFileLabel } from "../lib/pinGroups";
+import { useMissingGroupPaths } from "./useMissingGroupPaths";
 
 /** The dropdown at the left of the tab bar: switch, save, rename and delete pin groups. */
 export function PinGroupSwitcher() {
@@ -19,6 +23,8 @@ export function PinGroupSwitcher() {
   const hasPinned = useEditorStore((s) => s.tabs.some((t) => t.isPinned));
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const close = useCallback(() => setAnchor(null), []);
+  const root = usePinGroupStore((s) => s.root);
+  const missing = useMissingGroupPaths(anchor !== null);
 
   function open(button: HTMLElement) {
     const rect = button.getBoundingClientRect();
@@ -28,14 +34,28 @@ export function PinGroupSwitcher() {
   const active = groups.find((g) => g.id === activeGroupId);
 
   const entries: ContextMenuEntry[] = [
-    ...groups.map(
-      (g): ContextMenuEntry => ({
+    ...groups.flatMap((g): ContextMenuEntry[] => [
+      {
         type: "item",
-        label: `${g.name} (${g.paths.length})`,
+        label: g.name,
+        detail: `${g.paths.length}`,
         checked: g.id === activeGroupId,
         onSelect: () => void switchPinGroup(g.id),
+      },
+      // Each file under its group: activates the group and focuses the file.
+      ...g.paths.map((path): ContextMenuEntry => {
+        const { name, dir } = groupFileLabel(path, root);
+        const isMissing = missing.has(path);
+        return {
+          type: "item",
+          label: isMissing ? `${name} (missing)` : name,
+          detail: dir || undefined,
+          icon: <FileIcon name={name} />,
+          indent: true,
+          onSelect: () => void openFileFromGroup(g.id, path, isMissing),
+        };
       }),
-    ),
+    ]),
     {
       type: "item",
       label: "No Group",

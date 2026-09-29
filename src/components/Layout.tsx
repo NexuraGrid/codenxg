@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ComponentType } from "react";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { FileTree } from "./FileTree";
+import { PinGroupsSection } from "./PinGroupsSection";
 import { EditorTabs } from "./EditorTabs";
 import { MonacoEditor } from "./MonacoEditor";
 import { TerminalPanel } from "./TerminalPanel";
@@ -196,7 +197,12 @@ export function Layout({ workspaceRoot, onOpenFolder }: LayoutProps) {
                 <GearIcon />
               </button>
             </nav>
-            {sidebarView === "files" && <FileTree rootPath={workspaceRoot} />}
+            {sidebarView === "files" && (
+              <>
+                <PinGroupsSection />
+                <FileTree rootPath={workspaceRoot} />
+              </>
+            )}
             {sidebarView === "search" && <SearchPanel root={workspaceRoot} />}
             {sidebarView === "git" && <SourceControl root={workspaceRoot} />}
           </aside>

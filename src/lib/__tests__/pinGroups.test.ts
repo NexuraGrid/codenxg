@@ -1,8 +1,16 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore, type EditorTab } from "../../state/editorStore";
 import { usePinGroupStore } from "../../state/pinGroupStore";
-import { planGroupSwitch, sanitizePinGroups, type PinGroup } from "../pinGroups";
-import { addFileToGroup, switchPinGroup } from "../pinGroupActions";
+import { useDialogStore } from "../../state/dialogStore";
+import { groupFileLabel, planGroupSwitch, sanitizePinGroups, type PinGroup } from "../pinGroups";
+import {
+  addActiveFileToGroup,
+  addFileToGroup,
+  openFileFromGroup,
+  openGroupFile,
+  removeFileFromGroup,
+  switchPinGroup,
+} from "../pinGroupActions";
 import { buildWorkspaceRecord, readPinGroups, type WorkspaceTabsRecord } from "../persistedTabs";
 
 function tab(path: string, overrides: Partial<EditorTab> = {}): EditorTab {
@@ -127,6 +135,116 @@ describe("switchPinGroup", () => {
     await switchPinGroup(group.id, everything);
     expect(openPaths()).toEqual(["/c"]);
     expect(editor().tabs[0].isPinned).toBe(true);
+  });
+});
+
+describe("opening a group's file", () => {
+  it("activates the group, then focuses that file", async () => {
+    const old = pins().createGroup("Old", ["/a"])!;
+    const next = pins().createGroup("Next", ["/c", "/d"])!;
+    editor().addTab(tab("/a", { isPinned: true }));
+    pins().setActiveGroup(old.id);
+
+    expect(await openGroupFile(next.id, "/d", everything)).toBe("opened");
+
+    expect(pins().activeGroupId).toBe(next.id);
+    expect(openPaths()).toEqual(["/c", "/d"]);
+    expect(editor().activeTabPath).toBe("/d");
+  });
+
+  it("only focuses when the group is already active, reopening a closed tab pinned", async () => {
+    const group = pins().createGroup("G", ["/c", "/d"])!;
+    await switchPinGroup(group.id, everything);
+    editor().closeTabs(["/d"]);
+    editor().addTab(tab("/unrelated"));
+
+    expect(await openGroupFile(group.id, "/d", everything)).toBe("opened");
+
+    expect(openPaths()).toEqual(["/c", "/d", "/unrelated"]);
+    expect(editor().tabs.find((t) => t.path === "/d")?.isPinned).toBe(true);
+    expect(editor().activeTabPath).toBe("/d");
+  });
+
+  it("skips a missing file without switching groups", async () => {
+    const old = pins().createGroup("Old", ["/a"])!;
+    const next = pins().createGroup("Next", ["/gone", "/c"])!;
+    pins().setActiveGroup(old.id);
+    editor().addTab(tab("/a", { isPinned: true }));
+
+    expect(await openGroupFile(next.id, "/gone", async () => new Set(["/a", "/c"]))).toBe("missing");
+
+    expect(pins().activeGroupId).toBe(old.id);
+    expect(openPaths()).toEqual(["/a"]);
+    expect(editor().activeTabPath).toBe("/a");
+  });
+
+  it("ignores paths that aren't in the group", async () => {
+    const group = pins().createGroup("G", ["/c"])!;
+    expect(await openGroupFile(group.id, "/elsewhere", everything)).toBe("unknown");
+    expect(await openGroupFile("nope", "/c", everything)).toBe("unknown");
+    expect(openPaths()).toEqual([]);
+  });
+
+  it("offers to remove a missing file and removes it when confirmed", async () => {
+    const group = pins().createGroup("G", ["/gone", "/c"])!;
+    const pending = openFileFromGroup(group.id, "/gone", true);
+    expect(useDialogStore.getState().current?.request.title).toContain("gone");
+    useDialogStore.getState().close("remove");
+
+    expect(await pending).toBe("missing");
+    expect(pins().groups[0].paths).toEqual(["/c"]);
+    expect(openPaths()).toEqual([]);
+  });
+
+  it("keeps a missing file when removal is cancelled", async () => {
+    const group = pins().createGroup("G", ["/gone"])!;
+    const pending = openFileFromGroup(group.id, "/gone", false, async () => new Set());
+    await vi.waitFor(() => expect(useDialogStore.getState().current).not.toBeNull());
+    useDialogStore.getState().close("cancel");
+    await pending;
+    expect(pins().groups[0].paths).toEqual(["/gone"]);
+  });
+});
+
+describe("editing a group's files", () => {
+  it("removes a file from the group, leaving its tab open", () => {
+    const group = pins().createGroup("G", ["/a", "/b"])!;
+    editor().addTab(tab("/a", { isPinned: true }));
+    removeFileFromGroup(group.id, "/a");
+    expect(pins().groups[0].paths).toEqual(["/b"]);
+    expect(openPaths()).toEqual(["/a"]);
+  });
+
+  it("adds the active file to a group and pins it", () => {
+    const group = pins().createGroup("G", ["/a"])!;
+    editor().addTab(tab("/b"));
+    expect(addActiveFileToGroup(group.id)).toBe(true);
+    expect(pins().groups[0].paths).toEqual(["/a", "/b"]);
+    expect(editor().tabs[0].isPinned).toBe(true);
+  });
+
+  it("adds nothing without an active file tab", () => {
+    const group = pins().createGroup("G")!;
+    expect(addActiveFileToGroup(group.id)).toBe(false);
+    editor().addTab(tab("settings", { settings: true }));
+    expect(addActiveFileToGroup(group.id)).toBe(false);
+    expect(pins().groups[0].paths).toEqual([]);
+  });
+
+  it("doesn't add a file opened while a group is active", async () => {
+    const group = pins().createGroup("G", ["/a"])!;
+    await switchPinGroup(group.id, everything);
+    editor().addTab(tab("/b"));
+    expect(pins().groups[0].paths).toEqual(["/a"]);
+  });
+});
+
+describe("groupFileLabel", () => {
+  it("shows the folder relative to the workspace root", () => {
+    expect(groupFileLabel("/ws/src/lib/a.ts", "/ws")).toEqual({ name: "a.ts", dir: "src/lib" });
+    expect(groupFileLabel("/ws/a.ts", "/ws")).toEqual({ name: "a.ts", dir: "" });
+    expect(groupFileLabel("/other/a.ts", "/ws")).toEqual({ name: "a.ts", dir: "/other" });
+    expect(groupFileLabel("C:\\ws\\src\\a.ts", "C:\\ws")).toEqual({ name: "a.ts", dir: "src" });
   });
 });
 

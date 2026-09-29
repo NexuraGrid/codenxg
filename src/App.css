@@ -280,6 +280,155 @@ svg {
   user-select: none;
 }
 
+/* Explorer "Pin Groups" section, above the file tree (PinGroupsSection.tsx). */
+.pin-section {
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow: auto;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pin-section.is-collapsed {
+  padding-bottom: 0;
+}
+
+.pin-section__header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pin-section__groups,
+.pin-section__files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pin-section__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 7px 0 12px;
+  font-size: 13px;
+  color: #e4e4e4;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pin-section__row:hover {
+  background: var(--panel-hover);
+}
+
+.pin-section__group > svg {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  color: var(--text-dim);
+}
+
+.pin-section__group.is-active {
+  color: #fff;
+}
+
+.pin-section__group.is-active > svg:not(.chevron) {
+  color: var(--accent);
+}
+
+.pin-section__file {
+  padding-left: 32px;
+}
+
+.pin-section__file.is-focused {
+  background: var(--panel-active);
+}
+
+.pin-section__name {
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pin-section__group .pin-section__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.pin-section__dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.pin-section__file.is-missing .pin-section__name {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.pin-section__file.is-missing .file-ico {
+  opacity: 0.4;
+}
+
+.pin-section__dirty {
+  margin-left: auto;
+  font-size: 8px;
+  color: #ececec;
+}
+
+.pin-section__count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--panel-active);
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+.pin-section__actions {
+  display: none;
+  margin-left: auto;
+}
+
+.pin-section__row:hover .pin-section__actions {
+  display: flex;
+}
+
+.pin-section__dirty + .pin-section__actions {
+  margin-left: 0;
+}
+
+.pin-section__actions .icon-btn {
+  width: 20px;
+  height: 20px;
+}
+
+.pin-section__actions .icon-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.pin-section__empty {
+  padding: 2px 0 4px 32px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
 /* ================= EDITOR ================= */
 .tabs {
   display: flex;
@@ -307,8 +456,14 @@ svg {
   background: #1a1a1a;
 }
 
+/* An active group reads clearly: its name in full color, the pin in accent. */
 .pin-groups.is-active {
-  color: var(--text-dim);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pin-groups.is-active > svg:first-child {
+  color: var(--accent);
 }
 
 .pin-groups svg {
@@ -426,6 +581,11 @@ svg {
 }
 
 /* Pinned tabs trade the close button for an always-visible pin (click unpins). */
+/* Tabs whose file belongs to the active pin group. */
+.tab.in-group {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .tab .tab__pin {
   visibility: visible;
 }
@@ -697,6 +857,21 @@ svg {
   width: 12px;
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.context-menu__item.is-indented {
+  height: 24px;
+  padding-left: 30px;
+  font-size: 12.5px;
+}
+
+.context-menu__detail {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-size: 11.5px;
 }
 
 .context-menu__arrow {

@@ -6,6 +6,7 @@ import { languageFromPath } from "./language";
 import { closeTabs } from "./tabActions";
 import { planGroupSwitch, type PinGroup } from "./pinGroups";
 import { existingPaths } from "./tabPersistence";
+import { isPersistableTab } from "./persistedTabs";
 
 /** Checks which of `paths` still exist; injectable for tests. */
 export type ExistenceCheck = (paths: string[]) => Promise<Set<string>>;
@@ -96,4 +97,82 @@ export async function deleteGroupWithConfirm(groupId: string): Promise<void> {
     cancelValue: "cancel",
   });
   if (choice === "delete") usePinGroupStore.getState().deleteGroup(groupId);
+}
+
+/** What happened when a group's file was clicked. */
+export type GroupFileOpenResult = "opened" | "missing" | "unknown";
+
+/**
+ * Opens one of a group's files: activates the group first when it isn't the
+ * active one (see switchPinGroup), then focuses the file's tab, reopening it
+ * pinned if it was closed. A file that no longer exists changes nothing.
+ */
+export async function openGroupFile(
+  groupId: string,
+  path: string,
+  exists: ExistenceCheck = existingPaths,
+): Promise<GroupFileOpenResult> {
+  const group = usePinGroupStore.getState().groups.find((g) => g.id === groupId);
+  if (!group || !group.paths.includes(path)) return "unknown";
+  if (!(await exists([path])).has(path)) return "missing";
+
+  if (usePinGroupStore.getState().activeGroupId !== groupId) await switchPinGroup(groupId, exists);
+
+  const editor = useEditorStore.getState();
+  if (editor.tabs.some((t) => t.path === path)) {
+    editor.setActiveTab(path);
+  } else {
+    editor.addTab({ path, title: basename(path), isDirty: false, language: languageFromPath(path), isPinned: true });
+  }
+  return "opened";
+}
+
+/** Takes `path` out of a group; its tab (if open) is left as it is. */
+export function removeFileFromGroup(groupId: string, path: string): void {
+  usePinGroupStore.getState().removeFile(groupId, path);
+}
+
+/** The active tab's file, when it's a real file that can join a group. */
+export function activeFilePath(): string | null {
+  const { tabs, activeTabPath } = useEditorStore.getState();
+  const tab = tabs.find((t) => t.path === activeTabPath);
+  return tab && isPersistableTab(tab) ? tab.path : null;
+}
+
+/** Adds the active tab's file to a group (and pins it); false when there's none. */
+export function addActiveFileToGroup(groupId: string): boolean {
+  const path = activeFilePath();
+  if (!path || !usePinGroupStore.getState().groups.some((g) => g.id === groupId)) return false;
+  addFileToGroup(groupId, path);
+  return true;
+}
+
+/** Offers to drop a group entry whose file no longer exists. */
+export async function offerRemoveMissingFile(groupId: string, path: string): Promise<void> {
+  const choice = await showDialog({
+    title: `"${basename(path)}" no longer exists`,
+    message: "Remove it from the pin group?",
+    buttons: [
+      { label: "Remove", value: "remove", variant: "danger" },
+      { label: "Cancel", value: "cancel" },
+    ],
+    cancelValue: "cancel",
+  });
+  if (choice === "remove") removeFileFromGroup(groupId, path);
+}
+
+/**
+ * A click on a group's file (sidebar or switcher): activate its group and
+ * focus it — or, when it's gone (`knownMissing`, or found missing now),
+ * only offer to drop it from the group.
+ */
+export async function openFileFromGroup(
+  groupId: string,
+  path: string,
+  knownMissing = false,
+  exists: ExistenceCheck = existingPaths,
+): Promise<GroupFileOpenResult> {
+  const result = knownMissing ? "missing" : await openGroupFile(groupId, path, exists);
+  if (result === "missing") await offerRemoveMissingFile(groupId, path);
+  return result;
 }
