@@ -74,7 +74,10 @@ mod tests {
     fn write_then_read_roundtrips() {
         let dir = scratch_dir("roundtrip");
         write_named_file(&dir, "settings.json", "{\"a\":1}").unwrap();
-        assert_eq!(read_named_file(&dir, "settings.json").unwrap(), Some("{\"a\":1}".to_string()));
+        assert_eq!(
+            read_named_file(&dir, "settings.json").unwrap(),
+            Some("{\"a\":1}".to_string())
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -83,7 +86,10 @@ mod tests {
         let dir = scratch_dir("overwrite");
         write_named_file(&dir, "settings.json", "first").unwrap();
         write_named_file(&dir, "settings.json", "second").unwrap();
-        assert_eq!(read_named_file(&dir, "settings.json").unwrap(), Some("second".to_string()));
+        assert_eq!(
+            read_named_file(&dir, "settings.json").unwrap(),
+            Some("second".to_string())
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -92,8 +98,14 @@ mod tests {
         let dir = scratch_dir("independent");
         write_named_file(&dir, "settings.json", "s").unwrap();
         write_named_file(&dir, "workspaces-state.json", "w").unwrap();
-        assert_eq!(read_named_file(&dir, "settings.json").unwrap(), Some("s".to_string()));
-        assert_eq!(read_named_file(&dir, "workspaces-state.json").unwrap(), Some("w".to_string()));
+        assert_eq!(
+            read_named_file(&dir, "settings.json").unwrap(),
+            Some("s".to_string())
+        );
+        assert_eq!(
+            read_named_file(&dir, "workspaces-state.json").unwrap(),
+            Some("w".to_string())
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

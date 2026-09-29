@@ -6,9 +6,15 @@ use std::path::{Path, PathBuf};
 pub fn folder_from_args(args: &[String], cwd: &str) -> Option<String> {
     let arg = args.iter().skip(1).find(|a| !a.starts_with('-'))?;
     let path = Path::new(arg);
-    let absolute: PathBuf = if path.is_absolute() { path.to_path_buf() } else { Path::new(cwd).join(path) };
+    let absolute: PathBuf = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        Path::new(cwd).join(path)
+    };
     let resolved = normalize(&absolute);
-    resolved.is_dir().then(|| resolved.to_string_lossy().into_owned())
+    resolved
+        .is_dir()
+        .then(|| resolved.to_string_lossy().into_owned())
 }
 
 /// The folder this process was launched with, if any.
@@ -31,7 +37,10 @@ mod tests {
     fn dot_resolves_to_the_working_directory() {
         let cwd = std::env::temp_dir();
         let expected = cwd.to_string_lossy().into_owned();
-        assert_eq!(folder_from_args(&args(&["codenxg", "."]), &expected), Some(expected));
+        assert_eq!(
+            folder_from_args(&args(&["codenxg", "."]), &expected),
+            Some(expected)
+        );
     }
 
     #[test]
@@ -48,6 +57,9 @@ mod tests {
         let cwd = std::env::temp_dir().to_string_lossy().into_owned();
         assert_eq!(folder_from_args(&args(&["codenxg"]), &cwd), None);
         assert_eq!(folder_from_args(&args(&["codenxg", "--flag"]), &cwd), None);
-        assert_eq!(folder_from_args(&args(&["codenxg", "does-not-exist-xyz"]), &cwd), None);
+        assert_eq!(
+            folder_from_args(&args(&["codenxg", "does-not-exist-xyz"]), &cwd),
+            None
+        );
     }
 }

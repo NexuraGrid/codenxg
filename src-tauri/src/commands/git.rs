@@ -44,7 +44,14 @@ pub fn git_status(workspace: State<'_, WorkspaceState>) -> Result<GitStatus, Str
     // file watcher would see that write and trigger another status.
     let raw = git(
         &root,
-        &["--no-optional-locks", "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"],
+        &[
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "-z",
+            "--untracked-files=all",
+        ],
     )?;
     Ok(parse_status(&raw, Path::new(toplevel.trim_end())))
 }
@@ -87,7 +94,11 @@ pub fn git_discard(
 }
 
 #[tauri::command(async)]
-pub fn git_commit(workspace: State<'_, WorkspaceState>, message: String, stage_all: bool) -> Result<(), String> {
+pub fn git_commit(
+    workspace: State<'_, WorkspaceState>,
+    message: String,
+    stage_all: bool,
+) -> Result<(), String> {
     let root = workspace_root(&workspace)?;
     if message.trim().is_empty() {
         return Err("The commit message is empty".into());
@@ -124,7 +135,10 @@ pub fn git_init(workspace: State<'_, WorkspaceState>) -> Result<(), String> {
 /// The file's content at HEAD, or None when it isn't in HEAD (new, untracked,
 /// no commits yet) or is binary.
 #[tauri::command(async)]
-pub fn git_show_head(workspace: State<'_, WorkspaceState>, path: String) -> Result<Option<String>, String> {
+pub fn git_show_head(
+    workspace: State<'_, WorkspaceState>,
+    path: String,
+) -> Result<Option<String>, String> {
     let path = ensure_in_workspace(&workspace, &path)?;
     let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
         return Ok(None);
@@ -135,7 +149,10 @@ pub fn git_show_head(workspace: State<'_, WorkspaceState>, path: String) -> Resu
 }
 
 fn show_file(dir: &Path, spec: &str) -> Result<Option<String>, String> {
-    let output = git_command(dir).args(["show", spec]).output().map_err(|e| e.to_string())?;
+    let output = git_command(dir)
+        .args(["show", spec])
+        .output()
+        .map_err(|e| e.to_string())?;
     if !output.status.success() || output.stdout.contains(&0) {
         return Ok(None);
     }
@@ -213,10 +230,18 @@ pub struct SwitchBlock {
 /// Switches to a branch. A remote one ("origin/feature") gets a local
 /// tracking branch of the same name, as `git switch` does on its own.
 #[tauri::command(async)]
-pub fn git_checkout(workspace: State<'_, WorkspaceState>, name: String, is_remote: bool) -> Result<SwitchOutcome, String> {
+pub fn git_checkout(
+    workspace: State<'_, WorkspaceState>,
+    name: String,
+    is_remote: bool,
+) -> Result<SwitchOutcome, String> {
     let root = workspace_root(&workspace)?;
     reject_option_like(&name)?;
-    let local = if is_remote { name.split_once('/').map_or(name.as_str(), |(_, rest)| rest) } else { &name };
+    let local = if is_remote {
+        name.split_once('/').map_or(name.as_str(), |(_, rest)| rest)
+    } else {
+        &name
+    };
     Ok(try_switch(&root, local))
 }
 
@@ -231,8 +256,14 @@ pub fn git_create_branch(
 ) -> Result<SwitchOutcome, String> {
     let root = workspace_root(&workspace)?;
     reject_option_like(&name)?;
-    git(&root, &["check-ref-format", "--branch", &name]).map_err(|_| format!("\"{name}\" is not a valid branch name"))?;
-    if git(&root, &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")]).is_ok() {
+    git(&root, &["check-ref-format", "--branch", &name])
+        .map_err(|_| format!("\"{name}\" is not a valid branch name"))?;
+    if git(
+        &root,
+        &["rev-parse", "--verify", "-q", &format!("refs/heads/{name}")],
+    )
+    .is_ok()
+    {
         return Err(format!("A branch named \"{name}\" already exists"));
     }
 
@@ -246,7 +277,10 @@ pub fn git_create_branch(
     git(&root, &args)?;
 
     if !switch {
-        return Ok(SwitchOutcome { switched: false, blocked: None });
+        return Ok(SwitchOutcome {
+            switched: false,
+            blocked: None,
+        });
     }
     Ok(try_switch(&root, &name))
 }
@@ -254,29 +288,44 @@ pub fn git_create_branch(
 /// Puts every uncommitted change (untracked files too) in a stash, then
 /// switches. The stash stays for the user to bring back with `git stash pop`.
 #[tauri::command(async)]
-pub fn git_stash_and_switch(workspace: State<'_, WorkspaceState>, name: String) -> Result<SwitchOutcome, String> {
+pub fn git_stash_and_switch(
+    workspace: State<'_, WorkspaceState>,
+    name: String,
+) -> Result<SwitchOutcome, String> {
     let root = workspace_root(&workspace)?;
     reject_option_like(&name)?;
     let message = format!("Before switching to {name}");
-    git(&root, &["stash", "push", "--include-untracked", "-m", &message])?;
+    git(
+        &root,
+        &["stash", "push", "--include-untracked", "-m", &message],
+    )?;
     Ok(try_switch(&root, &name))
 }
 
 fn try_switch(root: &Path, name: &str) -> SwitchOutcome {
     match git(root, &["switch", name]) {
-        Ok(_) => SwitchOutcome { switched: true, blocked: None },
-        Err(message) => SwitchOutcome { switched: false, blocked: Some(classify_switch_error(&message)) },
+        Ok(_) => SwitchOutcome {
+            switched: true,
+            blocked: None,
+        },
+        Err(message) => SwitchOutcome {
+            switched: false,
+            blocked: Some(classify_switch_error(&message)),
+        },
     }
 }
 
 /// Reads why `git switch` refused. git's messages are stable in the C locale,
 /// which git_command forces.
 fn classify_switch_error(message: &str) -> SwitchBlock {
-    let kind = if message.contains("Your local changes to the following files would be overwritten") {
+    let kind = if message.contains("Your local changes to the following files would be overwritten")
+    {
         "local-changes"
     } else if message.contains("untracked working tree files would be") {
         "untracked-files"
-    } else if message.contains("resolve your current index first") || message.contains("needs merge") {
+    } else if message.contains("resolve your current index first")
+        || message.contains("needs merge")
+    {
         "unresolved-conflicts"
     } else {
         "other"
@@ -292,7 +341,11 @@ fn classify_switch_error(message: &str) -> SwitchBlock {
         })
         .filter(|f| !f.is_empty())
         .collect();
-    SwitchBlock { kind, files, detail: message.trim().to_string() }
+    SwitchBlock {
+        kind,
+        files,
+        detail: message.trim().to_string(),
+    }
 }
 
 #[tauri::command(async)]
@@ -302,7 +355,11 @@ pub fn git_fetch(workspace: State<'_, WorkspaceState>) -> Result<(), String> {
 }
 
 #[tauri::command(async)]
-pub fn git_log(workspace: State<'_, WorkspaceState>, skip: u32, limit: u32) -> Result<Vec<GitCommit>, String> {
+pub fn git_log(
+    workspace: State<'_, WorkspaceState>,
+    skip: u32,
+    limit: u32,
+) -> Result<Vec<GitCommit>, String> {
     let root = workspace_root(&workspace)?;
     // No commits yet: an empty history, not an error.
     if git(&root, &["rev-parse", "--verify", "-q", "HEAD"]).is_err() {
@@ -321,19 +378,37 @@ pub fn git_log(workspace: State<'_, WorkspaceState>, skip: u32, limit: u32) -> R
 }
 
 #[tauri::command(async)]
-pub fn git_commit_files(workspace: State<'_, WorkspaceState>, hash: String) -> Result<Vec<GitCommitFile>, String> {
+pub fn git_commit_files(
+    workspace: State<'_, WorkspaceState>,
+    hash: String,
+) -> Result<Vec<GitCommitFile>, String> {
     let root = workspace_root(&workspace)?;
     reject_non_hash(&hash)?;
     let toplevel = git(&root, &["rev-parse", "--show-toplevel"])?;
     // --root: the first commit lists its files as added instead of nothing.
-    let raw = git(&root, &["show", "--root", "--format=", "--name-status", "-z", "-M", &hash])?;
+    let raw = git(
+        &root,
+        &[
+            "show",
+            "--root",
+            "--format=",
+            "--name-status",
+            "-z",
+            "-M",
+            &hash,
+        ],
+    )?;
     Ok(parse_name_status(&raw, Path::new(toplevel.trim_end())))
 }
 
 /// A file as it was in `rev` (a commit hash, optionally with `^` for its
 /// parent). None when it doesn't exist there or is binary.
 #[tauri::command(async)]
-pub fn git_show_at(workspace: State<'_, WorkspaceState>, rev: String, path: String) -> Result<Option<String>, String> {
+pub fn git_show_at(
+    workspace: State<'_, WorkspaceState>,
+    rev: String,
+    path: String,
+) -> Result<Option<String>, String> {
     reject_non_hash(rev.trim_end_matches('^'))?;
     let path = ensure_in_workspace(&workspace, &path)?;
     let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
@@ -417,7 +492,10 @@ pub fn git_stash_drop(workspace: State<'_, WorkspaceState>, index: u32) -> Resul
 
 /// The files a stash touches, tracked and (when the git version supports it) untracked.
 #[tauri::command(async)]
-pub fn git_stash_files(workspace: State<'_, WorkspaceState>, index: u32) -> Result<Vec<GitCommitFile>, String> {
+pub fn git_stash_files(
+    workspace: State<'_, WorkspaceState>,
+    index: u32,
+) -> Result<Vec<GitCommitFile>, String> {
     let root = workspace_root(&workspace)?;
     let toplevel = git(&root, &["rev-parse", "--show-toplevel"])?;
     let raw = stash_name_status(&root, &stash_ref(index))?;
@@ -434,13 +512,22 @@ pub fn git_stash_file_diff(
     orig_path: Option<String>,
 ) -> Result<StashFileDiff, String> {
     let path = ensure_in_workspace(&workspace, &path)?;
-    let orig_path = orig_path.map(|p| ensure_in_workspace(&workspace, &p)).transpose()?;
+    let orig_path = orig_path
+        .map(|p| ensure_in_workspace(&workspace, &p))
+        .transpose()?;
     let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
-        return Ok(StashFileDiff { before: None, after: None });
+        return Ok(StashFileDiff {
+            before: None,
+            after: None,
+        });
     };
     let before_path = orig_path.as_deref().unwrap_or(&path);
-    let (Some(before_dir), Some(before_name)) = (before_path.parent(), before_path.file_name()) else {
-        return Ok(StashFileDiff { before: None, after: None });
+    let (Some(before_dir), Some(before_name)) = (before_path.parent(), before_path.file_name())
+    else {
+        return Ok(StashFileDiff {
+            before: None,
+            after: None,
+        });
     };
     stash_file_diff(
         &stash_ref(index),
@@ -460,7 +547,14 @@ fn stash_ref(index: u32) -> String {
 /// just get the tracked changes instead of failing.
 fn stash_name_status(root: &Path, stash: &str) -> Result<String, String> {
     let with_untracked = git_command(root)
-        .args(["stash", "show", "--include-untracked", "--name-status", "-z", stash])
+        .args([
+            "stash",
+            "show",
+            "--include-untracked",
+            "--name-status",
+            "-z",
+            stash,
+        ])
         .output()
         .map_err(|e| e.to_string())?;
     if with_untracked.status.success() {
@@ -495,9 +589,18 @@ fn parse_stash_list(raw: &str) -> Vec<GitStash> {
             let gd = fields.next()?;
             let subject = fields.next()?;
             let timestamp = fields.next()?.parse().ok()?;
-            let index = gd.strip_prefix("stash@{")?.strip_suffix('}')?.parse().ok()?;
+            let index = gd
+                .strip_prefix("stash@{")?
+                .strip_suffix('}')?
+                .parse()
+                .ok()?;
             let (branch, message) = parse_stash_subject(subject);
-            Some(GitStash { index, message, branch, timestamp })
+            Some(GitStash {
+                index,
+                message,
+                branch,
+                timestamp,
+            })
         })
         .collect()
 }
@@ -534,7 +637,8 @@ fn reject_non_hash(hash: &str) -> Result<(), String> {
 
 fn workspace_root(workspace: &WorkspaceState) -> Result<PathBuf, String> {
     let root = workspace.root.read().map_err(|e| e.to_string())?;
-    root.clone().ok_or_else(|| "No workspace is open".to_string())
+    root.clone()
+        .ok_or_else(|| "No workspace is open".to_string())
 }
 
 fn scoped(workspace: &WorkspaceState, paths: &[String]) -> Result<(PathBuf, Vec<PathBuf>), String> {
@@ -560,7 +664,10 @@ fn run_with_paths(root: &Path, args: &[&str], paths: &[PathBuf]) -> Result<(), S
 }
 
 fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let output = git_command(dir).args(args).output().map_err(|e| e.to_string())?;
+    let output = git_command(dir)
+        .args(args)
+        .output()
+        .map_err(|e| e.to_string())?;
     check(output)
 }
 
@@ -593,7 +700,10 @@ fn check(output: std::process::Output) -> Result<String, String> {
 /// Parses `git status --porcelain=v2 --branch -z`. Paths come relative to the
 /// repository root and are returned absolute.
 fn parse_status(raw: &str, toplevel: &Path) -> GitStatus {
-    let mut status = GitStatus { is_repo: true, ..GitStatus::default() };
+    let mut status = GitStatus {
+        is_repo: true,
+        ..GitStatus::default()
+    };
     let absolute = |rel: &str| toplevel.join(rel).to_string_lossy().into_owned();
     let mut records = raw.split('\0').filter(|r| !r.is_empty());
 
@@ -605,7 +715,9 @@ fn parse_status(raw: &str, toplevel: &Path) -> GitStatus {
                 "branch.head" if value != "(detached)" => status.branch = Some(value.into()),
                 "branch.upstream" => status.upstream = Some(value.into()),
                 "branch.ab" => {
-                    let mut counts = value.split(' ').map(|n| n.trim_start_matches(['+', '-']).parse().unwrap_or(0));
+                    let mut counts = value
+                        .split(' ')
+                        .map(|n| n.trim_start_matches(['+', '-']).parse().unwrap_or(0));
                     status.ahead = counts.next().unwrap_or(0);
                     status.behind = counts.next().unwrap_or(0);
                 }
@@ -656,7 +768,12 @@ fn parse_branches(raw: &str) -> Vec<GitBranch> {
             if is_remote && name.ends_with("/HEAD") {
                 return None;
             }
-            Some(GitBranch { name: name.into(), is_remote, is_current, upstream })
+            Some(GitBranch {
+                name: name.into(),
+                is_remote,
+                is_current,
+                upstream,
+            })
         })
         .collect()
 }
@@ -686,16 +803,27 @@ fn parse_log(raw: &str) -> Vec<GitCommit> {
 /// `--name-status -z`: "M\0path\0", renames/copies "R100\0old\0new\0".
 fn parse_name_status(raw: &str, toplevel: &Path) -> Vec<GitCommitFile> {
     let absolute = |rel: &str| toplevel.join(rel).to_string_lossy().into_owned();
-    let mut fields = raw.trim_start_matches('\n').split('\0').filter(|f| !f.is_empty());
+    let mut fields = raw
+        .trim_start_matches('\n')
+        .split('\0')
+        .filter(|f| !f.is_empty());
     let mut files = Vec::new();
     while let Some(code) = fields.next() {
         let status = code.chars().next().unwrap_or('M');
         let Some(first) = fields.next() else { break };
         let file = if status == 'R' || status == 'C' {
             let Some(new) = fields.next() else { break };
-            GitCommitFile { path: absolute(new), orig_path: Some(absolute(first)), status }
+            GitCommitFile {
+                path: absolute(new),
+                orig_path: Some(absolute(first)),
+                status,
+            }
         } else {
-            GitCommitFile { path: absolute(first), orig_path: None, status }
+            GitCommitFile {
+                path: absolute(first),
+                orig_path: None,
+                status,
+            }
         };
         files.push(file);
     }
@@ -716,13 +844,20 @@ fn change(path: String, orig_path: Option<String>, xy: &str, conflicted: bool) -
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_switch_error, parse_branches, parse_log, parse_name_status, parse_stash_list, parse_stash_subject,
-        parse_status, stash_file_diff, stash_name_status, stash_ref, try_switch, GitChange,
+        classify_switch_error, parse_branches, parse_log, parse_name_status, parse_stash_list,
+        parse_stash_subject, parse_status, stash_file_diff, stash_name_status, stash_ref,
+        try_switch, GitChange,
     };
     use std::path::Path;
 
     fn changed(path: &str, index: char, worktree: char) -> GitChange {
-        GitChange { path: path.into(), orig_path: None, index, worktree, conflicted: false }
+        GitChange {
+            path: path.into(),
+            orig_path: None,
+            index,
+            worktree,
+            conflicted: false,
+        }
     }
 
     #[test]
@@ -739,10 +874,16 @@ mod tests {
 
     #[test]
     fn a_fresh_repository_has_no_head_and_detached_has_no_branch() {
-        let fresh = parse_status("# branch.oid (initial)\0# branch.head main\0", Path::new("/repo"));
+        let fresh = parse_status(
+            "# branch.oid (initial)\0# branch.head main\0",
+            Path::new("/repo"),
+        );
         assert_eq!(fresh.head_oid, None);
 
-        let detached = parse_status("# branch.oid abc\0# branch.head (detached)\0", Path::new("/repo"));
+        let detached = parse_status(
+            "# branch.oid abc\0# branch.head (detached)\0",
+            Path::new("/repo"),
+        );
         assert_eq!(detached.branch, None);
     }
 
@@ -765,11 +906,15 @@ mod tests {
 
     #[test]
     fn reads_renames_with_their_original_path() {
-        let raw = "2 R. N... 100644 100644 100644 aaa aaa R100 src/new.ts\0src/old.ts\0? after.txt\0";
+        let raw =
+            "2 R. N... 100644 100644 100644 aaa aaa R100 src/new.ts\0src/old.ts\0? after.txt\0";
         let status = parse_status(raw, Path::new("/repo"));
 
         assert_eq!(status.changes[0].path, "/repo/src/new.ts");
-        assert_eq!(status.changes[0].orig_path.as_deref(), Some("/repo/src/old.ts"));
+        assert_eq!(
+            status.changes[0].orig_path.as_deref(),
+            Some("/repo/src/old.ts")
+        );
         assert_eq!(status.changes[0].index, 'R');
         assert_eq!(status.changes[1].path, "/repo/after.txt");
     }
@@ -790,25 +935,63 @@ mod tests {
         std::fs::write(dir.join("kept.txt"), "changed").unwrap();
         std::fs::write(dir.join("fresh.txt"), "u").unwrap();
 
-        let raw = super::git(&dir, &["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"]).unwrap();
+        let raw = super::git(
+            &dir,
+            &[
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "-z",
+                "--untracked-files=all",
+            ],
+        )
+        .unwrap();
         let status = parse_status(&raw, &dir);
-        let find = |name: &str| status.changes.iter().find(|c| c.path.ends_with(name)).expect(name);
+        let find = |name: &str| {
+            status
+                .changes
+                .iter()
+                .find(|c| c.path.ends_with(name))
+                .expect(name)
+        };
 
         assert_eq!(status.branch.as_deref(), Some("main"));
         assert!(status.head_oid.is_some());
         let renamed = find("new name.txt");
         assert_eq!(renamed.index, 'R');
-        assert!(renamed.orig_path.as_deref().unwrap().ends_with("old name.txt"));
+        assert!(renamed
+            .orig_path
+            .as_deref()
+            .unwrap()
+            .ends_with("old name.txt"));
         assert_eq!(find("kept.txt").worktree, 'M');
         assert_eq!(find("fresh.txt").index, '?');
 
-        let log = parse_log(&super::git(&dir, &["log", "--format=%H%x00%h%x00%s%x00%an%x00%at%x00%D%x1e"]).unwrap());
+        let log = parse_log(
+            &super::git(
+                &dir,
+                &["log", "--format=%H%x00%h%x00%s%x00%an%x00%at%x00%D%x1e"],
+            )
+            .unwrap(),
+        );
         assert_eq!(log.len(), 1);
         assert_eq!(log[0].subject, "init");
         assert!(log[0].refs.iter().any(|r| r.contains("main")));
 
         let files = parse_name_status(
-            &super::git(&dir, &["show", "--root", "--format=", "--name-status", "-z", "-M", &log[0].hash]).unwrap(),
+            &super::git(
+                &dir,
+                &[
+                    "show",
+                    "--root",
+                    "--format=",
+                    "--name-status",
+                    "-z",
+                    "-M",
+                    &log[0].hash,
+                ],
+            )
+            .unwrap(),
             &dir,
         );
         assert_eq!(files.len(), 2);
@@ -873,7 +1056,9 @@ mod tests {
         assert_eq!(untracked.kind, "untracked-files");
         assert_eq!(untracked.files, vec!["notes.txt"]);
 
-        let conflicts = classify_switch_error("src/a.ts: needs merge\nerror: you need to resolve your current index first");
+        let conflicts = classify_switch_error(
+            "src/a.ts: needs merge\nerror: you need to resolve your current index first",
+        );
         assert_eq!(conflicts.kind, "unresolved-conflicts");
         assert_eq!(conflicts.files, vec!["src/a.ts"]);
 
@@ -986,7 +1171,9 @@ mod tests {
         std::fs::write(dir.join("fresh.txt"), "untracked").unwrap();
         run(&["stash", "push", "-u", "-m", "my message"]);
 
-        let list = parse_stash_list(&super::git(&dir, &["stash", "list", "--format=%gd%x00%s%x00%at%x1e"]).unwrap());
+        let list = parse_stash_list(
+            &super::git(&dir, &["stash", "list", "--format=%gd%x00%s%x00%at%x1e"]).unwrap(),
+        );
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].index, 0);
         assert_eq!(list[0].branch.as_deref(), Some("main"));
@@ -998,22 +1185,33 @@ mod tests {
         assert!(names.iter().any(|p| p.ends_with("tracked.txt")));
         assert!(names.iter().any(|p| p.ends_with("fresh.txt")));
 
-        let tracked_diff = stash_file_diff("stash@{0}", &dir, "tracked.txt", &dir, "tracked.txt").unwrap();
+        let tracked_diff =
+            stash_file_diff("stash@{0}", &dir, "tracked.txt", &dir, "tracked.txt").unwrap();
         assert_eq!(tracked_diff.before.as_deref(), Some("old"));
         assert_eq!(tracked_diff.after.as_deref(), Some("new"));
 
-        let untracked_diff = stash_file_diff("stash@{0}", &dir, "fresh.txt", &dir, "fresh.txt").unwrap();
+        let untracked_diff =
+            stash_file_diff("stash@{0}", &dir, "fresh.txt", &dir, "fresh.txt").unwrap();
         assert_eq!(untracked_diff.before, None);
         assert_eq!(untracked_diff.after.as_deref(), Some("untracked"));
 
         // Working tree is back to HEAD until the stash is brought back.
-        assert_eq!(std::fs::read_to_string(dir.join("tracked.txt")).unwrap(), "old");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            "old"
+        );
         assert!(!dir.join("fresh.txt").exists());
 
         run(&["stash", "pop", "-q"]);
-        assert_eq!(std::fs::read_to_string(dir.join("tracked.txt")).unwrap(), "new");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            "new"
+        );
         assert!(dir.join("fresh.txt").exists());
-        assert!(super::git(&dir, &["stash", "list"]).unwrap().trim().is_empty());
+        assert!(super::git(&dir, &["stash", "list"])
+            .unwrap()
+            .trim()
+            .is_empty());
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

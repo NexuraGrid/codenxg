@@ -34,7 +34,9 @@ pub fn read_dir(state: State<'_, WorkspaceState>, path: String) -> Result<Vec<Fi
             continue;
         }
 
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
 
         result.push(FileEntry {
             name,
@@ -76,7 +78,11 @@ fn read_text(path: &Path, max_bytes: u64) -> Result<String, String> {
 }
 
 #[tauri::command(async)]
-pub fn write_file(state: State<'_, WorkspaceState>, path: String, content: String) -> Result<(), String> {
+pub fn write_file(
+    state: State<'_, WorkspaceState>,
+    path: String,
+    content: String,
+) -> Result<(), String> {
     let path = ensure_in_workspace(&state, &path)?;
     write_atomic(&path, content.as_bytes()).map_err(|e| e.to_string())
 }
@@ -92,9 +98,17 @@ pub(crate) fn write_atomic(path: &Path, content: &[u8]) -> std::io::Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_path_buf(),
         Err(e) => return Err(e),
     };
-    let parent = target.parent().ok_or_else(|| std::io::Error::other("Invalid path"))?;
-    let name = target.file_name().ok_or_else(|| std::io::Error::other("Invalid path"))?;
-    let temp = parent.join(format!(".{}.{}.tmp", name.to_string_lossy(), std::process::id()));
+    let parent = target
+        .parent()
+        .ok_or_else(|| std::io::Error::other("Invalid path"))?;
+    let name = target
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("Invalid path"))?;
+    let temp = parent.join(format!(
+        ".{}.{}.tmp",
+        name.to_string_lossy(),
+        std::process::id()
+    ));
 
     let result = (|| {
         let mut file = std::fs::File::create(&temp)?;
@@ -150,7 +164,11 @@ fn create(parent: &Path, name: &str, is_dir: bool) -> Result<String, String> {
 /// Renames a file or folder in place (same parent) and returns its new path.
 /// Refuses to replace a different existing entry.
 #[tauri::command(async)]
-pub fn rename_entry(state: State<'_, WorkspaceState>, path: String, new_name: String) -> Result<String, String> {
+pub fn rename_entry(
+    state: State<'_, WorkspaceState>,
+    path: String,
+    new_name: String,
+) -> Result<String, String> {
     let source = ensure_below_workspace(&state, &path)?;
     rename(&source, &new_name)
 }
@@ -180,7 +198,11 @@ fn rename(source: &Path, new_name: &str) -> Result<String, String> {
 /// and returns its new path. Never overwrites and never moves a folder into
 /// itself or one of its own subfolders.
 #[tauri::command(async)]
-pub fn move_entry(state: State<'_, WorkspaceState>, path: String, target_dir: String) -> Result<String, String> {
+pub fn move_entry(
+    state: State<'_, WorkspaceState>,
+    path: String,
+    target_dir: String,
+) -> Result<String, String> {
     let source = ensure_below_workspace(&state, &path)?;
     let target_dir = ensure_in_workspace(&state, &target_dir)?;
     move_into(&source, &target_dir)
@@ -279,8 +301,20 @@ fn validate_entry_name(raw: &str) -> Result<&str, String> {
 // Folders that are almost never opened by hand but can hold hundreds of
 // thousands of files; walking them would make Ctrl+E crawl on /mnt/c.
 const SKIP_WHEN_LISTING: [&str; 14] = [
-    "dist", "build", ".next", ".nuxt", ".venv", "venv", "__pycache__", ".cache",
-    ".ruff_cache", ".mypy_cache", ".pytest_cache", "vendor", ".codegraph", ".idea",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".pytest_cache",
+    "vendor",
+    ".codegraph",
+    ".idea",
 ];
 const MAX_LISTED_FILES: usize = 20_000;
 
@@ -321,29 +355,35 @@ fn walk_files(root: &Path, max: usize) -> FileList {
     let files = Mutex::new(Vec::new());
     let truncated = AtomicBool::new(false);
 
-    workspace_walk_builder(root)
-        .build_parallel()
-        .run(|| {
-            Box::new(|entry| {
-                // Unreadable entries (permissions, broken links) are skipped, not fatal.
-                let Ok(entry) = entry else { return WalkState::Continue };
-                if !entry.file_type().is_some_and(|t| t.is_file() || t.is_symlink()) {
-                    return WalkState::Continue;
-                }
-                let mut files = files.lock().unwrap();
-                if files.len() >= max {
-                    truncated.store(true, Ordering::Relaxed);
-                    return WalkState::Quit;
-                }
-                files.push(entry.path().to_string_lossy().into_owned());
-                WalkState::Continue
-            })
-        });
+    workspace_walk_builder(root).build_parallel().run(|| {
+        Box::new(|entry| {
+            // Unreadable entries (permissions, broken links) are skipped, not fatal.
+            let Ok(entry) = entry else {
+                return WalkState::Continue;
+            };
+            if !entry
+                .file_type()
+                .is_some_and(|t| t.is_file() || t.is_symlink())
+            {
+                return WalkState::Continue;
+            }
+            let mut files = files.lock().unwrap();
+            if files.len() >= max {
+                truncated.store(true, Ordering::Relaxed);
+                return WalkState::Quit;
+            }
+            files.push(entry.path().to_string_lossy().into_owned());
+            WalkState::Continue
+        })
+    });
 
     let mut files = files.into_inner().unwrap();
     // Threads finish in any order; keep the list stable between opens.
     files.sort_unstable();
-    FileList { files, truncated: truncated.into_inner() }
+    FileList {
+        files,
+        truncated: truncated.into_inner(),
+    }
 }
 
 #[cfg(test)]
@@ -413,7 +453,10 @@ mod tests {
         std::fs::write(folder.join("a.txt"), "inner").unwrap();
 
         assert!(move_into(&file, &folder).is_err());
-        assert_eq!(std::fs::read_to_string(folder.join("a.txt")).unwrap(), "inner");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("a.txt")).unwrap(),
+            "inner"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -491,7 +534,10 @@ mod tests {
 
         write_atomic(&link, b"new").unwrap();
 
-        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
         std::fs::remove_dir_all(dir).unwrap();
     }
@@ -551,7 +597,10 @@ mod tests {
     #[test]
     fn rejects_empty_dot_and_path_names() {
         for bad in ["", "   ", ".", "..", "a/b", "a\\b"] {
-            assert!(validate_entry_name(bad).is_err(), "{bad:?} should be rejected");
+            assert!(
+                validate_entry_name(bad).is_err(),
+                "{bad:?} should be rejected"
+            );
         }
     }
 }

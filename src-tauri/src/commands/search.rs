@@ -124,7 +124,10 @@ fn make_preview(line: &str, match_start: usize, match_end: usize) -> (String, us
 /// keyed by the full path, like every other command in this app (quick
 /// open, git status), so the frontend never has to reconstruct one.
 fn relative_path(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root).unwrap_or(path).to_string_lossy().replace('\\', "/")
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 /// Every match for `regex` in one file's text, capped by `remaining`.
@@ -177,7 +180,12 @@ pub fn search_in_workspace(
     let include = build_globset(query.include.as_deref().unwrap_or(""))?;
     let exclude = build_globset(query.exclude.as_deref().unwrap_or(""))?;
 
-    Ok(walk_and_search(&root, &regex, include.as_ref(), exclude.as_ref()))
+    Ok(walk_and_search(
+        &root,
+        &regex,
+        include.as_ref(),
+        exclude.as_ref(),
+    ))
 }
 
 // Holds both the accumulated files and the running match count behind one
@@ -190,17 +198,28 @@ struct Accumulator {
     truncated: bool,
 }
 
-fn walk_and_search(root: &Path, regex: &Regex, include: Option<&GlobSet>, exclude: Option<&GlobSet>) -> SearchResponse {
+fn walk_and_search(
+    root: &Path,
+    regex: &Regex,
+    include: Option<&GlobSet>,
+    exclude: Option<&GlobSet>,
+) -> SearchResponse {
     use ignore::WalkState;
 
-    let state = Mutex::new(Accumulator { files: Vec::new(), match_count: 0, truncated: false });
+    let state = Mutex::new(Accumulator {
+        files: Vec::new(),
+        match_count: 0,
+        truncated: false,
+    });
 
     workspace_walk_builder(root).build_parallel().run(|| {
         Box::new(|entry| {
             if state.lock().unwrap().match_count >= MAX_MATCHES {
                 return WalkState::Quit;
             }
-            let Ok(entry) = entry else { return WalkState::Continue };
+            let Ok(entry) = entry else {
+                return WalkState::Continue;
+            };
             if !entry.file_type().is_some_and(|t| t.is_file()) {
                 return WalkState::Continue;
             }
@@ -214,16 +233,22 @@ fn walk_and_search(root: &Path, regex: &Regex, include: Option<&GlobSet>, exclud
                 return WalkState::Continue;
             }
 
-            let Ok(metadata) = entry.metadata() else { return WalkState::Continue };
+            let Ok(metadata) = entry.metadata() else {
+                return WalkState::Continue;
+            };
             if metadata.len() > MAX_OPEN_BYTES {
                 return WalkState::Continue;
             }
 
-            let Ok(bytes) = std::fs::read(path) else { return WalkState::Continue };
+            let Ok(bytes) = std::fs::read(path) else {
+                return WalkState::Continue;
+            };
             if looks_binary(&bytes) {
                 return WalkState::Continue;
             }
-            let Ok(text) = String::from_utf8(bytes) else { return WalkState::Continue };
+            let Ok(text) = String::from_utf8(bytes) else {
+                return WalkState::Continue;
+            };
 
             // Scanned with a generous per-file cap; the exact cross-file cap
             // is enforced below, under the lock.
@@ -243,14 +268,21 @@ fn walk_and_search(root: &Path, regex: &Regex, include: Option<&GlobSet>, exclud
                 guard.truncated = true;
             }
             guard.match_count += file_matches.len();
-            guard.files.push(FileMatches { path: path.to_string_lossy().to_string(), matches: file_matches });
+            guard.files.push(FileMatches {
+                path: path.to_string_lossy().to_string(),
+                matches: file_matches,
+            });
             WalkState::Continue
         })
     });
 
     let mut result = state.into_inner().unwrap();
     result.files.sort_by(|a, b| a.path.cmp(&b.path));
-    SearchResponse { match_count: result.match_count, truncated: result.truncated, files: result.files }
+    SearchResponse {
+        match_count: result.match_count,
+        truncated: result.truncated,
+        files: result.files,
+    }
 }
 
 #[derive(Deserialize)]
@@ -264,7 +296,10 @@ pub struct FileWrite {
 /// file via the same temp+rename `write_file` uses. Best-effort: a failing
 /// file doesn't stop the rest, and every failure is reported together.
 #[tauri::command(async)]
-pub fn write_search_files(state: State<'_, WorkspaceState>, files: Vec<FileWrite>) -> Result<(), String> {
+pub fn write_search_files(
+    state: State<'_, WorkspaceState>,
+    files: Vec<FileWrite>,
+) -> Result<(), String> {
     let mut errors = Vec::new();
     for file in files {
         match ensure_in_workspace(&state, &file.path) {
@@ -285,7 +320,10 @@ pub fn write_search_files(state: State<'_, WorkspaceState>, files: Vec<FileWrite
 
 #[cfg(test)]
 mod tests {
-    use super::{build_globset, build_regex, looks_binary, make_preview, matches_in_text, walk_and_search, SearchQuery};
+    use super::{
+        build_globset, build_regex, looks_binary, make_preview, matches_in_text, walk_and_search,
+        SearchQuery,
+    };
     use std::path::PathBuf;
 
     fn query(text: &str) -> SearchQuery {

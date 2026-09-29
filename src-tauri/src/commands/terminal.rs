@@ -209,7 +209,9 @@ fn take_decodable(pending: &mut Vec<u8>) -> String {
             }
             Err(err) => {
                 let valid = err.valid_up_to();
-                out.push_str(std::str::from_utf8(&pending[..valid]).expect("prefix is valid UTF-8"));
+                out.push_str(
+                    std::str::from_utf8(&pending[..valid]).expect("prefix is valid UTF-8"),
+                );
                 match err.error_len() {
                     None => {
                         pending.drain(..valid);

@@ -43,7 +43,10 @@ const SERVERS: &[(&str, &[(&str, &[&str])])] = &[
 enum Install {
     /// `program args…`, where `program` is a developer tool (npm, go,
     /// rustup) found the same way a server binary is.
-    Run { program: &'static str, args: &'static [&'static str] },
+    Run {
+        program: &'static str,
+        args: &'static [&'static str],
+    },
     /// jdtls has no package-manager recipe: the official build is downloaded
     /// into the app data folder and launched with `java` directly.
     ManagedJdtls,
@@ -65,18 +68,32 @@ struct Recipe {
 
 const NODE: &str = "Node.js with npm (https://nodejs.org)";
 const JAVA: &str = "Java 25 or newer (e.g. Eclipse Temurin, https://adoptium.net)";
-const JDTLS_URL: &str = "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz";
+const JDTLS_URL: &str =
+    "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz";
 // Current jdtls snapshots are built against Java 25 (their core bundles
 // require `osgi.ee JavaSE 25`, even though the bundled jdtls.py still checks
 // for 21): on 21 the OSGi framework starts but jdt.core never resolves.
 const JAVA_MIN_MAJOR: u32 = 25;
 
 const fn npm(language: &'static str, args: &'static [&'static str]) -> Recipe {
-    Recipe { language, install: Install::Run { program: "npm", args }, tool: "npm", requires: NODE }
+    Recipe {
+        language,
+        install: Install::Run {
+            program: "npm",
+            args,
+        },
+        tool: "npm",
+        requires: NODE,
+    }
 }
 
 const fn manual(language: &'static str, hint: &'static str) -> Recipe {
-    Recipe { language, install: Install::Manual { hint }, tool: "", requires: "" }
+    Recipe {
+        language,
+        install: Install::Manual { hint },
+        tool: "",
+        requires: "",
+    }
 }
 
 const CLANGD_HINT: &str =
@@ -87,14 +104,25 @@ const RECIPES: &[Recipe] = &[
     npm("python", &["install", "-g", "pyright"]),
     Recipe {
         language: "go",
-        install: Install::Run { program: "go", args: &["install", "golang.org/x/tools/gopls@latest"] },
+        install: Install::Run {
+            program: "go",
+            args: &["install", "golang.org/x/tools/gopls@latest"],
+        },
         tool: "go",
         requires: "Go (https://go.dev/dl)",
     },
-    Recipe { language: "java", install: Install::ManagedJdtls, tool: "java", requires: JAVA },
+    Recipe {
+        language: "java",
+        install: Install::ManagedJdtls,
+        tool: "java",
+        requires: JAVA,
+    },
     Recipe {
         language: "rust",
-        install: Install::Run { program: "rustup", args: &["component", "add", "rust-analyzer"] },
+        install: Install::Run {
+            program: "rustup",
+            args: &["component", "add", "rust-analyzer"],
+        },
         tool: "rustup",
         requires: "rustup (https://rustup.rs)",
     },
@@ -104,7 +132,10 @@ const RECIPES: &[Recipe] = &[
     npm("yaml", &["install", "-g", "yaml-language-server"]),
     npm("shell", &["install", "-g", "bash-language-server"]),
     // TypeScript too: the Vue server loads it from `typescript.tsdk`.
-    npm("vue", &["install", "-g", "@vue/language-server@2", "typescript"]),
+    npm(
+        "vue",
+        &["install", "-g", "@vue/language-server@2", "typescript"],
+    ),
 ];
 
 fn recipe_for(language: &str) -> Option<&'static Recipe> {
@@ -124,7 +155,12 @@ fn install_display(recipe: &Recipe) -> String {
 /// languages lsp_install can handle, so the webview can offer the button.
 fn not_installed_error(language: &str) -> String {
     match recipe_for(language) {
-        Some(recipe @ Recipe { install: Install::Manual { .. }, .. }) => format!("not-installed:{}", install_display(recipe)),
+        Some(
+            recipe @ Recipe {
+                install: Install::Manual { .. },
+                ..
+            },
+        ) => format!("not-installed:{}", install_display(recipe)),
         Some(recipe) => format!("not-installed:installable:{}", install_display(recipe)),
         None => "not-installed:".to_string(),
     }
@@ -204,7 +240,9 @@ pub fn lsp_start(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let name = launch.name;
-    let mut child = command.spawn().map_err(|e| format!("Couldn't start {name}: {e}"))?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Couldn't start {name}: {e}"))?;
 
     let stdin = child.stdin.take().ok_or("no stdin")?;
     let stdout = child.stdout.take().ok_or("no stdout")?;
@@ -215,11 +253,13 @@ pub fn lsp_start(
         });
     }
 
-    registry
-        .servers
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(language.clone(), LspServer { child, stdin: Arc::new(Mutex::new(stdin)) });
+    registry.servers.lock().map_err(|e| e.to_string())?.insert(
+        language.clone(),
+        LspServer {
+            child,
+            stdin: Arc::new(Mutex::new(stdin)),
+        },
+    );
 
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -237,15 +277,25 @@ pub fn lsp_start(
         let _ = on_message.send(EXITED_NOTIFICATION.to_string());
     });
 
-    Ok(LspStarted { name: name.to_string(), initialization_options: launch.initialization_options })
+    Ok(LspStarted {
+        name: name.to_string(),
+        initialization_options: launch.initialization_options,
+    })
 }
 
 /// The first installed candidate for `language`, then (Java only) the managed
 /// jdtls install. `not-installed:…` when there's nothing to run.
-fn find_launch(app: &AppHandle, language: &str, candidates: &[(&'static str, &'static [&'static str])], root: &Path) -> Result<Launch, String> {
+fn find_launch(
+    app: &AppHandle,
+    language: &str,
+    candidates: &[(&'static str, &'static [&'static str])],
+    root: &Path,
+) -> Result<Launch, String> {
     let found = candidates
         .iter()
-        .find_map(|(name, args)| locate(name).map(|(binary, is_shim)| (*name, binary, is_shim, *args)))
+        .find_map(|(name, args)| {
+            locate(name).map(|(binary, is_shim)| (*name, binary, is_shim, *args))
+        })
         // rustup puts a `rust-analyzer` proxy in ~/.cargo/bin even when the
         // component isn't installed; it only fails once run.
         .filter(|(_, binary, _, _)| language != "rust" || runs(binary));
@@ -253,12 +303,21 @@ fn find_launch(app: &AppHandle, language: &str, candidates: &[(&'static str, &'s
         let initialization_options = match language {
             // Without a TypeScript to load the Vue server fails to initialize;
             // the one-click install brings one along.
-            "vue" => Some(vue_initialization_options(&find_tsdk(root, Path::new(&binary)).ok_or_else(|| not_installed_error(language))?)),
+            "vue" => Some(vue_initialization_options(
+                &find_tsdk(root, Path::new(&binary))
+                    .ok_or_else(|| not_installed_error(language))?,
+            )),
             _ => None,
         };
         let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
         let (program, full_args) = command_for_binary(&binary, is_shim, &comspec, args);
-        return Ok(Launch { name, program, args: full_args, path: server_path(language, &binary), initialization_options });
+        return Ok(Launch {
+            name,
+            program,
+            args: full_args,
+            path: server_path(language, &binary),
+            initialization_options,
+        });
     }
     if language == "java" {
         if let Some(launch) = managed_jdtls_launch(app)? {
@@ -273,7 +332,13 @@ fn runs(binary: &str) -> bool {
     let mut command = Command::new(binary);
     crate::appimage::clean_command(&mut command);
     hide_console(&mut command);
-    command.arg("--version").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
+    command
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// Installs the language server for `language` with its fixed, allow-listed
@@ -316,7 +381,12 @@ fn run_install(recipe: &Recipe, program: &str, args: &[&str]) -> Result<(), Stri
     if log.trim().is_empty() {
         log = String::from_utf8_lossy(&output.stdout).into_owned();
     }
-    Err(format!("{program} {} failed ({}):\n{}", args.join(" "), output.status, tail(&log, 12)))
+    Err(format!(
+        "{program} {} failed ({}):\n{}",
+        args.join(" "),
+        output.status,
+        tail(&log, 12)
+    ))
 }
 
 /// A console program started from the GUI would otherwise flash a window on Windows.
@@ -339,20 +409,26 @@ fn tail(text: &str, lines: usize) -> String {
 // ---- Managed jdtls -------------------------------------------------------
 
 fn managed_jdtls_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path().app_data_dir().map(|dir| dir.join("lsp").join("jdtls")).map_err(|e| e.to_string())
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join("lsp").join("jdtls"))
+        .map_err(|e| e.to_string())
 }
 
 /// Downloads and unpacks the official jdtls build (after checking for a
 /// usable Java, so nobody downloads 50 MB they can't run).
 async fn install_jdtls(app: &AppHandle, recipe: &'static Recipe) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || find_java(recipe)).await.map_err(|e| e.to_string())??;
+    tauri::async_runtime::spawn_blocking(move || find_java(recipe))
+        .await
+        .map_err(|e| e.to_string())??;
     let target = managed_jdtls_dir(app)?;
 
     // reqwest is built without a bundled TLS provider (as the updater does).
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();
     }
-    let download_error = |e: reqwest::Error| format!("Couldn't download jdtls from {JDTLS_URL}: {e}");
+    let download_error =
+        |e: reqwest::Error| format!("Couldn't download jdtls from {JDTLS_URL}: {e}");
     let bytes = reqwest::Client::new()
         .get(JDTLS_URL)
         .send()
@@ -363,7 +439,9 @@ async fn install_jdtls(app: &AppHandle, recipe: &'static Recipe) -> Result<(), S
         .await
         .map_err(download_error)?;
 
-    tauri::async_runtime::spawn_blocking(move || unpack_jdtls(&bytes, &target)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || unpack_jdtls(&bytes, &target))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Unpacks a jdtls `.tar.gz` into `target`, replacing any previous install
@@ -387,11 +465,15 @@ fn unpack_jdtls(archive: &[u8], target: &Path) -> Result<(), String> {
 /// `plugins/org.eclipse.equinox.launcher_<version>.jar` (not the per-platform
 /// `launcher.<ws>.<os>` fragments).
 fn launcher_jar(home: &Path) -> Option<PathBuf> {
-    std::fs::read_dir(home.join("plugins")).ok()?.flatten().map(|entry| entry.path()).find(|path| {
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("org.eclipse.equinox.launcher_") && n.ends_with(".jar"))
-    })
+    std::fs::read_dir(home.join("plugins"))
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                n.starts_with("org.eclipse.equinox.launcher_") && n.ends_with(".jar")
+            })
+        })
 }
 
 /// The jdtls configuration folder for a platform (`std::env::consts` names).
@@ -415,7 +497,10 @@ fn jdtls_args(home: &Path, jar: &Path, config_dir: &str) -> Vec<String> {
         "-Dosgi.bundles.defaultStartLevel=4".into(),
         "-Declipse.product=org.eclipse.jdt.ls.core.product".into(),
         "-Dosgi.checkConfiguration=true".into(),
-        format!("-Dosgi.sharedConfiguration.area={}", config.to_string_lossy()),
+        format!(
+            "-Dosgi.sharedConfiguration.area={}",
+            config.to_string_lossy()
+        ),
         "-Dosgi.sharedConfiguration.area.readOnly=true".into(),
         "-Dosgi.configuration.cascaded=true".into(),
         "--add-modules=ALL-SYSTEM".into(),
@@ -432,7 +517,9 @@ fn jdtls_args(home: &Path, jar: &Path, config_dir: &str) -> Vec<String> {
 /// Java of at least JAVA_MIN_MAJOR to run: `tool-missing:java:…` otherwise.
 fn managed_jdtls_launch(app: &AppHandle) -> Result<Option<Launch>, String> {
     let home = managed_jdtls_dir(app)?;
-    let Some(jar) = launcher_jar(&home) else { return Ok(None) };
+    let Some(jar) = launcher_jar(&home) else {
+        return Ok(None);
+    };
     let recipe = recipe_for("java").ok_or("not-installable")?;
     let java = find_java(recipe)?;
     let config = jdtls_config_dir(std::env::consts::OS, std::env::consts::ARCH);
@@ -447,7 +534,11 @@ fn managed_jdtls_launch(app: &AppHandle) -> Result<Option<Launch>, String> {
 
 /// A `java` of at least JAVA_MIN_MAJOR: $JAVA_HOME's, then the usual lookup.
 fn find_java(recipe: &Recipe) -> Result<String, String> {
-    let exe = if host_os() == HostOs::Windows { "java.exe" } else { "java" };
+    let exe = if host_os() == HostOs::Windows {
+        "java.exe"
+    } else {
+        "java"
+    };
     let java = std::env::var_os("JAVA_HOME")
         .map(|home| PathBuf::from(home).join("bin").join(exe))
         .filter(|p| p.is_file())
@@ -458,9 +549,17 @@ fn find_java(recipe: &Recipe) -> Result<String, String> {
     let mut command = Command::new(&java);
     crate::appimage::clean_command(&mut command);
     hide_console(&mut command);
-    let output = command.arg("-version").stdin(Stdio::null()).output().map_err(|_| tool_missing(recipe))?;
+    let output = command
+        .arg("-version")
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|_| tool_missing(recipe))?;
     // `java -version` prints to stderr.
-    let text = format!("{}{}", String::from_utf8_lossy(&output.stderr), String::from_utf8_lossy(&output.stdout));
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
     match java_major(&text) {
         Some(major) if major >= JAVA_MIN_MAJOR => Ok(java),
         Some(major) => Err(format!("{}; found Java {major}", tool_missing(recipe))),
@@ -493,7 +592,9 @@ fn vue_initialization_options(tsdk: &Path) -> serde_json::Value {
 /// TypeScript's `lib` folder for the Vue server: the project's own first,
 /// then one installed globally next to the server.
 fn find_tsdk(root: &Path, server_binary: &Path) -> Option<PathBuf> {
-    tsdk_candidates(root, server_binary).into_iter().find(|dir| dir.join("typescript.js").is_file())
+    tsdk_candidates(root, server_binary)
+        .into_iter()
+        .find(|dir| dir.join("typescript.js").is_file())
 }
 
 fn tsdk_candidates(root: &Path, server_binary: &Path) -> Vec<PathBuf> {
@@ -501,7 +602,9 @@ fn tsdk_candidates(root: &Path, server_binary: &Path) -> Vec<PathBuf> {
     // Unix: <prefix>/bin/vue-language-server links into
     // <prefix>/lib/node_modules/@vue/language-server/…; the node_modules
     // folder that holds the server also holds a global typescript.
-    let real = server_binary.canonicalize().unwrap_or_else(|_| server_binary.to_path_buf());
+    let real = server_binary
+        .canonicalize()
+        .unwrap_or_else(|_| server_binary.to_path_buf());
     candidates.extend(
         real.ancestors()
             .filter(|dir| dir.file_name().is_some_and(|n| n == "node_modules"))
@@ -510,18 +613,30 @@ fn tsdk_candidates(root: &Path, server_binary: &Path) -> Vec<PathBuf> {
     if let Some(bin) = server_binary.parent() {
         // Windows: <prefix>\vue-language-server.cmd with <prefix>\node_modules.
         candidates.push(bin.join("node_modules").join("typescript").join("lib"));
-        candidates.push(bin.join("..").join("lib").join("node_modules").join("typescript").join("lib"));
+        candidates.push(
+            bin.join("..")
+                .join("lib")
+                .join("node_modules")
+                .join("typescript")
+                .join("lib"),
+        );
     }
     candidates
 }
 
 #[tauri::command(async)]
-pub fn lsp_send(registry: State<'_, LspRegistry>, language: String, message: String) -> Result<(), String> {
+pub fn lsp_send(
+    registry: State<'_, LspRegistry>,
+    language: String,
+    message: String,
+) -> Result<(), String> {
     // Hold the registry lock only to find the pipe: a server busy indexing can
     // leave a write blocked, and that must not stall the other languages.
     let stdin = {
         let servers = registry.servers.lock().map_err(|e| e.to_string())?;
-        let server = servers.get(&language).ok_or_else(|| format!("{language} server is not running"))?;
+        let server = servers
+            .get(&language)
+            .ok_or_else(|| format!("{language} server is not running"))?;
         Arc::clone(&server.stdin)
     };
     let mut stdin = stdin.lock().map_err(|e| e.to_string())?;
@@ -535,7 +650,11 @@ pub fn lsp_stop(registry: State<'_, LspRegistry>, language: String) -> Result<()
 }
 
 fn stop(registry: &LspRegistry, language: &str) {
-    let removed = registry.servers.lock().ok().and_then(|mut servers| servers.remove(language));
+    let removed = registry
+        .servers
+        .lock()
+        .ok()
+        .and_then(|mut servers| servers.remove(language));
     if let Some(mut server) = removed {
         let _ = server.child.kill();
         let _ = server.child.wait();
@@ -589,7 +708,9 @@ fn locate(name: &str) -> Option<(String, bool)> {
             }
             resolve_binary_windows(name, &search, &|p| Path::new(p).is_file())
         }
-        HostOs::Unix => resolve_binary(name).map(|binary| (binary.to_string_lossy().into_owned(), false)),
+        HostOs::Unix => {
+            resolve_binary(name).map(|binary| (binary.to_string_lossy().into_owned(), false))
+        }
     }
 }
 
@@ -606,7 +727,10 @@ fn resolve_binary(name: &str) -> Option<PathBuf> {
 
 fn from_tool_dirs(name: &str) -> Option<PathBuf> {
     let env = |key: &str| std::env::var(key).ok();
-    tool_dirs(HostOs::Unix, &env).into_iter().map(|dir| PathBuf::from(dir).join(name)).find(|p| is_executable(p))
+    tool_dirs(HostOs::Unix, &env)
+        .into_iter()
+        .map(|dir| PathBuf::from(dir).join(name))
+        .find(|p| is_executable(p))
 }
 
 /// Where developer tools install binaries that a GUI launch rarely has on
@@ -619,11 +743,17 @@ fn tool_dirs(os: HostOs, env: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
         HostOs::Windows => ('\\', ';', env("USERPROFILE")),
         HostOs::Unix => ('/', ':', env("HOME")),
     };
-    let join = |dir: &str, child: &str| format!("{}{sep}{child}", dir.trim_end_matches(['/', '\\']));
+    let join =
+        |dir: &str, child: &str| format!("{}{sep}{child}", dir.trim_end_matches(['/', '\\']));
     let mut dirs: Vec<String> = Vec::new();
     dirs.extend(env("GOBIN"));
     if let Some(gopath) = env("GOPATH") {
-        dirs.extend(gopath.split(list_sep).filter(|p| !p.is_empty()).map(|p| join(p, "bin")));
+        dirs.extend(
+            gopath
+                .split(list_sep)
+                .filter(|p| !p.is_empty())
+                .map(|p| join(p, "bin")),
+        );
     }
     dirs.extend(env("CARGO_HOME").map(|c| join(&c, "bin")));
     if let Some(home) = &home {
@@ -634,14 +764,23 @@ fn tool_dirs(os: HostOs, env: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
         HostOs::Windows => dirs.extend(env("APPDATA").map(|a| join(&a, "npm"))),
         HostOs::Unix => {
             dirs.extend(home.map(|h| join(&h, ".linuxbrew/bin")));
-            dirs.extend(["/home/linuxbrew/.linuxbrew/bin", "/opt/homebrew/bin", "/usr/local/bin"].map(String::from));
+            dirs.extend(
+                [
+                    "/home/linuxbrew/.linuxbrew/bin",
+                    "/opt/homebrew/bin",
+                    "/usr/local/bin",
+                ]
+                .map(String::from),
+            );
         }
     }
     dirs
 }
 
 fn find_in_path(name: &str, path_var: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|dir| dir.join(name)).find(|p| is_executable(p))
+    std::env::split_paths(path_var)
+        .map(|dir| dir.join(name))
+        .find(|p| is_executable(p))
 }
 
 fn from_login_shell(name: &str) -> Option<PathBuf> {
@@ -666,7 +805,9 @@ fn from_login_shell(name: &str) -> Option<PathBuf> {
 /// folder: nvm's `versions/node/<v>/bin`, fnm's `node-versions/<v>/installation/bin`.
 fn from_node_managers(name: &str) -> Option<PathBuf> {
     let home = PathBuf::from(std::env::var_os("HOME")?);
-    let data_home = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home.join(".local/share"));
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".local/share"));
     let mut roots: Vec<(PathBuf, &str)> = vec![(home.join(".nvm/versions/node"), "bin")];
     let fnm_dirs = [
         std::env::var_os("FNM_DIR").map(PathBuf::from),
@@ -674,7 +815,12 @@ fn from_node_managers(name: &str) -> Option<PathBuf> {
         Some(home.join(".fnm")),
         Some(home.join("Library/Application Support/fnm")),
     ];
-    roots.extend(fnm_dirs.into_iter().flatten().map(|dir| (dir.join("node-versions"), "installation/bin")));
+    roots.extend(
+        fnm_dirs
+            .into_iter()
+            .flatten()
+            .map(|dir| (dir.join("node-versions"), "installation/bin")),
+    );
     roots.into_iter().find_map(|(versions, bin)| {
         std::fs::read_dir(versions)
             .ok()?
@@ -688,7 +834,8 @@ fn is_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        path.metadata().is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        path.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     }
     #[cfg(not(unix))]
     {
@@ -706,28 +853,44 @@ fn is_executable(path: &Path) -> bool {
 /// only apply when actually *compiled* for Windows, which would make this
 /// untestable with a fake Windows-shaped PATH on any other host (including
 /// this project's Linux CI). `exists` is likewise injected.
-fn resolve_binary_windows(name: &str, path_var: &str, exists: &dyn Fn(&str) -> bool) -> Option<(String, bool)> {
+fn resolve_binary_windows(
+    name: &str,
+    path_var: &str,
+    exists: &dyn Fn(&str) -> bool,
+) -> Option<(String, bool)> {
     const EXTENSIONS: &[&str] = &["exe", "cmd", "bat"];
-    path_var.split(';').map(str::trim).filter(|dir| !dir.is_empty()).find_map(|dir| {
-        let dir = dir.trim_end_matches(['\\', '/']);
-        EXTENSIONS.iter().find_map(|ext| {
-            let candidate = format!("{dir}\\{name}.{ext}");
-            exists(&candidate).then(|| (candidate, *ext != "exe"))
+    path_var
+        .split(';')
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .find_map(|dir| {
+            let dir = dir.trim_end_matches(['\\', '/']);
+            EXTENSIONS.iter().find_map(|ext| {
+                let candidate = format!("{dir}\\{name}.{ext}");
+                exists(&candidate).then(|| (candidate, *ext != "exe"))
+            })
         })
-    })
 }
 
 /// A `.cmd`/`.bat` shim (npm's global-install launcher on Windows) can't be
 /// spawned directly by `Command::new` — Windows only knows how to run a
 /// batch file through `cmd.exe`, so it's wrapped as `cmd /C <shim> <args>`.
 /// A plain `.exe` (as some servers ship) is spawned as-is.
-fn command_for_binary(binary: &str, is_shim: bool, comspec: &str, extra_args: &[&str]) -> (String, Vec<String>) {
+fn command_for_binary(
+    binary: &str,
+    is_shim: bool,
+    comspec: &str,
+    extra_args: &[&str],
+) -> (String, Vec<String>) {
     if is_shim {
         let mut args = vec!["/C".to_string(), binary.to_string()];
         args.extend(extra_args.iter().map(|s| s.to_string()));
         (comspec.to_string(), args)
     } else {
-        (binary.to_string(), extra_args.iter().map(|s| s.to_string()).collect())
+        (
+            binary.to_string(),
+            extra_args.iter().map(|s| s.to_string()).collect(),
+        )
     }
 }
 
@@ -767,23 +930,28 @@ fn data_dir_args(server: &str, root: &Path) -> Vec<String> {
         .map(PathBuf::from)
         .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(|_| std::env::temp_dir());
-    let dir = cache.join("codenxg/jdtls").join(format!("{:016x}", fnv1a(root.to_string_lossy().as_bytes())));
+    let dir = cache
+        .join("codenxg/jdtls")
+        .join(format!("{:016x}", fnv1a(root.to_string_lossy().as_bytes())));
     vec!["-data".into(), dir.to_string_lossy().into_owned()]
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf29ce484222325, |hash, b| (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3))
+    bytes.iter().fold(0xcbf29ce484222325, |hash, b| {
+        (hash ^ u64::from(*b)).wrapping_mul(0x100000001b3)
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        command_for_binary, find_in_path, install_display, java_major, jdtls_args, jdtls_config_dir, launcher_jar, not_installed_error,
-        read_message, recipe_for, resolve_binary, resolve_binary_windows, tail, tool_dirs, tool_missing, tsdk_candidates, unpack_jdtls,
-        vue_initialization_options, write_message, HostOs, Install, RECIPES, SERVERS,
+        command_for_binary, find_in_path, install_display, java_major, jdtls_args,
+        jdtls_config_dir, launcher_jar, not_installed_error, read_message, recipe_for,
+        resolve_binary, resolve_binary_windows, tail, tool_dirs, tool_missing, tsdk_candidates,
+        unpack_jdtls, vue_initialization_options, write_message, HostOs, Install, RECIPES, SERVERS,
     };
-    use std::path::Path;
     use std::io::{BufReader, Cursor};
+    use std::path::Path;
 
     #[test]
     fn frames_round_trip() {
@@ -792,7 +960,10 @@ mod tests {
         write_message(&mut buffer, r#"{"id":2}"#).unwrap();
 
         let mut reader = BufReader::new(Cursor::new(buffer));
-        assert_eq!(read_message(&mut reader).unwrap().unwrap(), r#"{"id":1,"text":"ñ"}"#);
+        assert_eq!(
+            read_message(&mut reader).unwrap().unwrap(),
+            r#"{"id":1,"text":"ñ"}"#
+        );
         assert_eq!(read_message(&mut reader).unwrap().unwrap(), r#"{"id":2}"#);
         assert_eq!(read_message(&mut reader).unwrap(), None);
     }
@@ -801,7 +972,9 @@ mod tests {
     fn content_length_counts_bytes_not_characters() {
         let mut buffer = Vec::new();
         write_message(&mut buffer, "\"ñ\"").unwrap();
-        assert!(String::from_utf8(buffer).unwrap().starts_with("Content-Length: 4\r\n"));
+        assert!(String::from_utf8(buffer)
+            .unwrap()
+            .starts_with("Content-Length: 4\r\n"));
     }
 
     #[test]
@@ -820,12 +993,16 @@ mod tests {
     #[test]
     fn every_server_language_has_a_recipe() {
         for (language, _) in SERVERS {
-            let recipe = recipe_for(language).unwrap_or_else(|| panic!("{language} has no install recipe"));
+            let recipe =
+                recipe_for(language).unwrap_or_else(|| panic!("{language} has no install recipe"));
             let error = not_installed_error(language);
             assert!(error.len() > "not-installed:".len(), "{language}: {error}");
             match recipe.install {
                 Install::Manual { hint } => assert!(!hint.is_empty(), "{language}"),
-                _ => assert!(!recipe.tool.is_empty() && !recipe.requires.is_empty(), "{language} must say what it requires"),
+                _ => assert!(
+                    !recipe.tool.is_empty() && !recipe.requires.is_empty(),
+                    "{language} must say what it requires"
+                ),
             }
         }
     }
@@ -833,7 +1010,11 @@ mod tests {
     #[test]
     fn every_recipe_is_for_a_served_language() {
         for recipe in RECIPES {
-            assert!(SERVERS.iter().any(|(id, _)| *id == recipe.language), "{} is not in SERVERS", recipe.language);
+            assert!(
+                SERVERS.iter().any(|(id, _)| *id == recipe.language),
+                "{} is not in SERVERS",
+                recipe.language
+            );
         }
     }
 
@@ -848,39 +1029,71 @@ mod tests {
 
     #[test]
     fn recipes_are_fixed_commands() {
-        assert_eq!(install_display(recipe_for("php").unwrap()), "npm install -g intelephense");
-        assert_eq!(install_display(recipe_for("python").unwrap()), "npm install -g pyright");
-        assert_eq!(install_display(recipe_for("go").unwrap()), "go install golang.org/x/tools/gopls@latest");
-        assert_eq!(install_display(recipe_for("rust").unwrap()), "rustup component add rust-analyzer");
-        assert_eq!(install_display(recipe_for("vue").unwrap()), "npm install -g @vue/language-server@2 typescript");
+        assert_eq!(
+            install_display(recipe_for("php").unwrap()),
+            "npm install -g intelephense"
+        );
+        assert_eq!(
+            install_display(recipe_for("python").unwrap()),
+            "npm install -g pyright"
+        );
+        assert_eq!(
+            install_display(recipe_for("go").unwrap()),
+            "go install golang.org/x/tools/gopls@latest"
+        );
+        assert_eq!(
+            install_display(recipe_for("rust").unwrap()),
+            "rustup component add rust-analyzer"
+        );
+        assert_eq!(
+            install_display(recipe_for("vue").unwrap()),
+            "npm install -g @vue/language-server@2 typescript"
+        );
         assert_eq!(recipe_for("java").unwrap().install, Install::ManagedJdtls);
     }
 
     #[test]
     fn unknown_languages_have_no_recipe() {
-        for language in ["", "PHP", "typescript", "php; rm -rf /", "npm install -g evil", "../java"] {
+        for language in [
+            "",
+            "PHP",
+            "typescript",
+            "php; rm -rf /",
+            "npm install -g evil",
+            "../java",
+        ] {
             assert!(recipe_for(language).is_none(), "{language}");
         }
     }
 
     #[test]
     fn not_installed_error_marks_only_installable_languages() {
-        assert_eq!(not_installed_error("php"), "not-installed:installable:npm install -g intelephense");
-        assert!(not_installed_error("java").starts_with("not-installed:installable:download https://download.eclipse.org/"));
+        assert_eq!(
+            not_installed_error("php"),
+            "not-installed:installable:npm install -g intelephense"
+        );
+        assert!(not_installed_error("java")
+            .starts_with("not-installed:installable:download https://download.eclipse.org/"));
         assert!(not_installed_error("cpp").starts_with("not-installed:sudo apt install clangd   ("));
         assert_eq!(not_installed_error("nope"), "not-installed:");
     }
 
     #[test]
     fn tool_missing_names_the_tool_and_what_to_install() {
-        assert_eq!(tool_missing(recipe_for("php").unwrap()), "tool-missing:npm:Node.js with npm (https://nodejs.org)");
+        assert_eq!(
+            tool_missing(recipe_for("php").unwrap()),
+            "tool-missing:npm:Node.js with npm (https://nodejs.org)"
+        );
         assert!(tool_missing(recipe_for("java").unwrap()).starts_with("tool-missing:java:Java 25"));
         assert!(tool_missing(recipe_for("go").unwrap()).starts_with("tool-missing:go:Go "));
     }
 
     #[test]
     fn java_major_reads_old_and_new_version_strings() {
-        assert_eq!(java_major("openjdk version \"21.0.2\" 2024-01-16\nOpenJDK Runtime"), Some(21));
+        assert_eq!(
+            java_major("openjdk version \"21.0.2\" 2024-01-16\nOpenJDK Runtime"),
+            Some(21)
+        );
         assert_eq!(java_major("java version \"1.8.0_402\""), Some(8));
         assert_eq!(java_major("openjdk version \"17\" 2021-09-14"), Some(17));
         assert_eq!(java_major("openjdk version \"23-ea\""), Some(23));
@@ -898,20 +1111,36 @@ mod tests {
 
     #[test]
     fn jdtls_args_launch_the_equinox_jar_with_the_shared_config() {
-        let args = jdtls_args(Path::new("/data/jdtls"), Path::new("/data/jdtls/plugins/launcher.jar"), "config_linux");
-        assert!(args.contains(&"-Dosgi.sharedConfiguration.area=/data/jdtls/config_linux".to_string()));
-        assert_eq!(args[args.len() - 2..], ["-jar".to_string(), "/data/jdtls/plugins/launcher.jar".to_string()]);
+        let args = jdtls_args(
+            Path::new("/data/jdtls"),
+            Path::new("/data/jdtls/plugins/launcher.jar"),
+            "config_linux",
+        );
+        assert!(
+            args.contains(&"-Dosgi.sharedConfiguration.area=/data/jdtls/config_linux".to_string())
+        );
+        assert_eq!(
+            args[args.len() - 2..],
+            [
+                "-jar".to_string(),
+                "/data/jdtls/plugins/launcher.jar".to_string()
+            ]
+        );
     }
 
     fn scratch_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("codenxg-lsp-test-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("codenxg-lsp-test-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
 
     fn tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::fast(),
+        ));
         for (path, data) in entries {
             let mut header = tar::Header::new_gnu();
             header.set_size(data.len() as u64);
@@ -929,12 +1158,21 @@ mod tests {
         std::fs::create_dir_all(target.join("stale")).unwrap();
         let archive = tar_gz(&[
             ("plugins/org.eclipse.equinox.launcher_1.7.0.jar", b"jar"),
-            ("plugins/org.eclipse.equinox.launcher.gtk.linux.x86_64_1.2.jar", b"fragment"),
+            (
+                "plugins/org.eclipse.equinox.launcher.gtk.linux.x86_64_1.2.jar",
+                b"fragment",
+            ),
             ("config_linux/config.ini", b"x"),
         ]);
         unpack_jdtls(&archive, &target).unwrap();
-        assert_eq!(launcher_jar(&target).unwrap().file_name().unwrap(), "org.eclipse.equinox.launcher_1.7.0.jar");
-        assert!(!target.join("stale").exists(), "the previous install is replaced");
+        assert_eq!(
+            launcher_jar(&target).unwrap().file_name().unwrap(),
+            "org.eclipse.equinox.launcher_1.7.0.jar"
+        );
+        assert!(
+            !target.join("stale").exists(),
+            "the previous install is replaced"
+        );
         assert!(!target.with_extension("partial").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -944,7 +1182,11 @@ mod tests {
         let dir = scratch_dir("reject");
         let target = dir.join("jdtls");
         std::fs::create_dir_all(target.join("plugins")).unwrap();
-        std::fs::write(target.join("plugins/org.eclipse.equinox.launcher_1.0.jar"), b"old").unwrap();
+        std::fs::write(
+            target.join("plugins/org.eclipse.equinox.launcher_1.0.jar"),
+            b"old",
+        )
+        .unwrap();
         assert!(unpack_jdtls(&tar_gz(&[("README", b"no launcher")]), &target).is_err());
         assert!(unpack_jdtls(b"not a tarball", &target).is_err());
         assert!(launcher_jar(&target).is_some());
@@ -960,8 +1202,18 @@ mod tests {
             _ => None,
         };
         let dirs = tool_dirs(HostOs::Unix, &env);
-        for expected in ["/gp1/bin", "/gp2/bin", "/opt/cargo/bin", "/home/u/go/bin", "/home/u/.cargo/bin", "/opt/homebrew/bin"] {
-            assert!(dirs.contains(&expected.to_string()), "{expected} missing from {dirs:?}");
+        for expected in [
+            "/gp1/bin",
+            "/gp2/bin",
+            "/opt/cargo/bin",
+            "/home/u/go/bin",
+            "/home/u/.cargo/bin",
+            "/opt/homebrew/bin",
+        ] {
+            assert!(
+                dirs.contains(&expected.to_string()),
+                "{expected} missing from {dirs:?}"
+            );
         }
     }
 
@@ -974,8 +1226,16 @@ mod tests {
             _ => None,
         };
         let dirs = tool_dirs(HostOs::Windows, &env);
-        for expected in ["D:\\gobin", "C:\\Users\\u\\go\\bin", "C:\\Users\\u\\.cargo\\bin", "C:\\Users\\u\\AppData\\Roaming\\npm"] {
-            assert!(dirs.contains(&expected.to_string()), "{expected} missing from {dirs:?}");
+        for expected in [
+            "D:\\gobin",
+            "C:\\Users\\u\\go\\bin",
+            "C:\\Users\\u\\.cargo\\bin",
+            "C:\\Users\\u\\AppData\\Roaming\\npm",
+        ] {
+            assert!(
+                dirs.contains(&expected.to_string()),
+                "{expected} missing from {dirs:?}"
+            );
         }
         assert!(!dirs.iter().any(|d| d.contains("homebrew")));
     }
@@ -994,7 +1254,10 @@ mod tests {
         }
         let home_str = home.to_string_lossy().into_owned();
         let env = |key: &str| (key == "HOME").then(|| home_str.clone());
-        let found = tool_dirs(HostOs::Unix, &env).into_iter().map(|d| Path::new(&d).join("gopls")).find(|p| p.is_file());
+        let found = tool_dirs(HostOs::Unix, &env)
+            .into_iter()
+            .map(|d| Path::new(&d).join("gopls"))
+            .find(|p| p.is_file());
         assert_eq!(found, Some(gopls));
         let _ = std::fs::remove_dir_all(home);
     }
@@ -1002,12 +1265,19 @@ mod tests {
     #[test]
     fn tsdk_prefers_the_project_then_the_global_node_modules() {
         let dir = scratch_dir("tsdk").canonicalize().unwrap();
-        let server = dir.join("prefix/lib/node_modules/@vue/language-server/bin/vue-language-server.js");
+        let server =
+            dir.join("prefix/lib/node_modules/@vue/language-server/bin/vue-language-server.js");
         std::fs::create_dir_all(server.parent().unwrap()).unwrap();
         std::fs::write(&server, "").unwrap();
         let candidates = tsdk_candidates(&dir.join("project"), &server);
-        assert_eq!(candidates[0], dir.join("project/node_modules/typescript/lib"));
-        assert!(candidates.contains(&dir.join("prefix/lib/node_modules/typescript/lib")), "{candidates:?}");
+        assert_eq!(
+            candidates[0],
+            dir.join("project/node_modules/typescript/lib")
+        );
+        assert!(
+            candidates.contains(&dir.join("prefix/lib/node_modules/typescript/lib")),
+            "{candidates:?}"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1027,7 +1297,9 @@ mod tests {
     // End to end against a real server when one is installed (skipped otherwise).
     #[test]
     fn talks_to_a_real_language_server() {
-        let Some(binary) = resolve_binary("pyright-langserver") else { return };
+        let Some(binary) = resolve_binary("pyright-langserver") else {
+            return;
+        };
         let mut child = std::process::Command::new(&binary)
             .arg("--stdio")
             .env("PATH", super::path_with(&binary))
@@ -1070,30 +1342,50 @@ mod tests {
 
     #[test]
     fn resolve_binary_windows_reports_a_plain_exe_as_not_a_shim() {
-        let found = resolve_binary_windows("jdtls", "C:\\tools", &exists_of(&["C:\\tools\\jdtls.exe"]));
+        let found =
+            resolve_binary_windows("jdtls", "C:\\tools", &exists_of(&["C:\\tools\\jdtls.exe"]));
         assert_eq!(found, Some(("C:\\tools\\jdtls.exe".to_string(), false)));
     }
 
     #[test]
     fn resolve_binary_windows_searches_every_path_entry_in_order() {
-        let found = resolve_binary_windows("pyright-langserver", "C:\\empty;C:\\npm", &exists_of(&["C:\\npm\\pyright-langserver.cmd"]));
-        assert_eq!(found, Some(("C:\\npm\\pyright-langserver.cmd".to_string(), true)));
+        let found = resolve_binary_windows(
+            "pyright-langserver",
+            "C:\\empty;C:\\npm",
+            &exists_of(&["C:\\npm\\pyright-langserver.cmd"]),
+        );
+        assert_eq!(
+            found,
+            Some(("C:\\npm\\pyright-langserver.cmd".to_string(), true))
+        );
     }
 
     #[test]
     fn resolve_binary_windows_is_none_when_nothing_matches() {
-        assert_eq!(resolve_binary_windows("nope", "C:\\a", &exists_of(&[])), None);
+        assert_eq!(
+            resolve_binary_windows("nope", "C:\\a", &exists_of(&[])),
+            None
+        );
     }
 
     #[test]
     fn resolve_binary_windows_tolerates_a_trailing_separator_on_a_path_entry() {
-        let found = resolve_binary_windows("intelephense", "C:\\npm\\", &exists_of(&["C:\\npm\\intelephense.cmd"]));
+        let found = resolve_binary_windows(
+            "intelephense",
+            "C:\\npm\\",
+            &exists_of(&["C:\\npm\\intelephense.cmd"]),
+        );
         assert_eq!(found, Some(("C:\\npm\\intelephense.cmd".to_string(), true)));
     }
 
     #[test]
     fn command_for_binary_wraps_a_shim_with_cmd_c() {
-        let (program, args) = command_for_binary("C:\\npm\\intelephense.cmd", true, "C:\\Windows\\System32\\cmd.exe", &["--stdio"]);
+        let (program, args) = command_for_binary(
+            "C:\\npm\\intelephense.cmd",
+            true,
+            "C:\\Windows\\System32\\cmd.exe",
+            &["--stdio"],
+        );
         assert_eq!(program, "C:\\Windows\\System32\\cmd.exe");
         assert_eq!(args, vec!["/C", "C:\\npm\\intelephense.cmd", "--stdio"]);
     }

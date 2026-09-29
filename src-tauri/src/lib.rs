@@ -2,24 +2,26 @@ mod appimage;
 mod commands;
 mod state;
 
-use commands::fs::{
-    create_entry, delete_entry, list_files, move_entry, read_dir, read_file, rename_entry, trash_entry,
-    write_file,
-};
-use commands::watcher::{watch_dirs, watch_start, WatcherState};
-use commands::workspace::set_workspace;
-use commands::git::{
-    git_branches, git_checkout, git_commit, git_commit_files, git_create_branch, git_discard, git_fetch, git_init,
-    git_log, git_pull, git_push, git_show_at, git_show_head, git_stage, git_stash_and_switch, git_stash_apply,
-    git_stash_drop, git_stash_file_diff, git_stash_files, git_stash_list, git_stash_pop, git_stash_push, git_status,
-    git_unstage,
-};
 use commands::cli_install::install_cli;
+use commands::fs::{
+    create_entry, delete_entry, list_files, move_entry, read_dir, read_file, rename_entry,
+    trash_entry, write_file,
+};
+use commands::git::{
+    git_branches, git_checkout, git_commit, git_commit_files, git_create_branch, git_discard,
+    git_fetch, git_init, git_log, git_pull, git_push, git_show_at, git_show_head, git_stage,
+    git_stash_and_switch, git_stash_apply, git_stash_drop, git_stash_file_diff, git_stash_files,
+    git_stash_list, git_stash_pop, git_stash_push, git_status, git_unstage,
+};
 use commands::launch::{folder_from_args, launch_folder};
 use commands::lsp::{lsp_install, lsp_send, lsp_start, lsp_stop, LspRegistry};
 use commands::search::{search_in_workspace, write_search_files};
-use commands::settings::{read_settings, read_workspaces_state, write_settings, write_workspaces_state};
+use commands::settings::{
+    read_settings, read_workspaces_state, write_settings, write_workspaces_state,
+};
 use commands::terminal::{close_terminal, create_terminal, resize_terminal, write_to_terminal};
+use commands::watcher::{watch_dirs, watch_start, WatcherState};
+use commands::workspace::set_workspace;
 
 use tauri::{Emitter, Manager};
 

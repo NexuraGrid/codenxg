@@ -17,7 +17,9 @@ pub fn set_workspace(state: State<'_, WorkspaceState>, path: String) -> Result<(
 /// Resolves `path` against the open workspace, rejecting anything outside it.
 pub fn ensure_in_workspace(state: &WorkspaceState, path: &str) -> Result<PathBuf, String> {
     let root = state.root.read().map_err(|e| e.to_string())?;
-    let root = root.as_ref().ok_or_else(|| "No workspace is open".to_string())?;
+    let root = root
+        .as_ref()
+        .ok_or_else(|| "No workspace is open".to_string())?;
     check_inside(root, Path::new(path))
 }
 
@@ -66,7 +68,10 @@ mod tests {
 
     #[test]
     fn normalize_resolves_dot_and_dot_dot() {
-        assert_eq!(normalize(Path::new("/ws/src/./a/../b.ts")), PathBuf::from("/ws/src/b.ts"));
+        assert_eq!(
+            normalize(Path::new("/ws/src/./a/../b.ts")),
+            PathBuf::from("/ws/src/b.ts")
+        );
         assert_eq!(normalize(Path::new("/ws/../..")), PathBuf::from("/"));
     }
 
@@ -74,14 +79,26 @@ mod tests {
     fn accepts_the_root_and_paths_inside_it() {
         let root = Path::new("/ws");
         assert!(check_inside(root, Path::new("/ws")).is_ok());
-        assert_eq!(check_inside(root, Path::new("/ws/src/./a.ts")), Ok(PathBuf::from("/ws/src/a.ts")));
+        assert_eq!(
+            check_inside(root, Path::new("/ws/src/./a.ts")),
+            Ok(PathBuf::from("/ws/src/a.ts"))
+        );
     }
 
     #[test]
     fn rejects_escapes_siblings_and_relative_paths() {
         let root = Path::new("/ws");
-        for bad in ["/ws/a/../../etc/passwd", "/ws-other/x", "/etc", "ws/a.ts", "../ws/a.ts"] {
-            assert!(check_inside(root, Path::new(bad)).is_err(), "{bad:?} should be rejected");
+        for bad in [
+            "/ws/a/../../etc/passwd",
+            "/ws-other/x",
+            "/etc",
+            "ws/a.ts",
+            "../ws/a.ts",
+        ] {
+            assert!(
+                check_inside(root, Path::new(bad)).is_err(),
+                "{bad:?} should be rejected"
+            );
         }
     }
 }

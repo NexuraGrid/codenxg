@@ -80,13 +80,26 @@ pub fn watch_dirs(
         return Err("The file watcher is not running".into());
     };
 
-    for dir in active.watched.difference(&wanted).cloned().collect::<Vec<_>>() {
+    for dir in active
+        .watched
+        .difference(&wanted)
+        .cloned()
+        .collect::<Vec<_>>()
+    {
         let _ = active.watcher.unwatch(&dir);
         active.watched.remove(&dir);
     }
-    for dir in wanted.difference(&active.watched).cloned().collect::<Vec<_>>() {
+    for dir in wanted
+        .difference(&active.watched)
+        .cloned()
+        .collect::<Vec<_>>()
+    {
         // A folder deleted a moment ago can't be watched; the UI drops it soon.
-        if active.watcher.watch(&dir, RecursiveMode::NonRecursive).is_ok() {
+        if active
+            .watcher
+            .watch(&dir, RecursiveMode::NonRecursive)
+            .is_ok()
+        {
             active.watched.insert(dir);
         }
     }
@@ -95,7 +108,8 @@ pub fn watch_dirs(
 
 fn workspace_root(workspace: &WorkspaceState) -> Result<PathBuf, String> {
     let root = workspace.root.read().map_err(|e| e.to_string())?;
-    root.clone().ok_or_else(|| "No workspace is open".to_string())
+    root.clone()
+        .ok_or_else(|| "No workspace is open".to_string())
 }
 
 fn forward_batches(rx: Receiver<PathBuf>, on_change: Channel<Vec<String>>) {
@@ -111,7 +125,10 @@ fn forward_batches(rx: Receiver<PathBuf>, on_change: Channel<Vec<String>>) {
                 Err(_) => break,
             }
         }
-        let paths = batch.into_iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let paths = batch
+            .into_iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
         if on_change.send(paths).is_err() {
             return;
         }
@@ -122,7 +139,10 @@ fn forward_batches(rx: Receiver<PathBuf>, on_change: Channel<Vec<String>>) {
 // would report it as changed again. The poll watcher reports content edits as
 // a write-time metadata change, so Modify is kept whole.
 fn is_relevant(kind: &EventKind) -> bool {
-    matches!(kind, EventKind::Create(_) | EventKind::Remove(_) | EventKind::Modify(_))
+    matches!(
+        kind,
+        EventKind::Create(_) | EventKind::Remove(_) | EventKind::Modify(_)
+    )
 }
 
 fn read_mounts() -> String {
@@ -142,7 +162,8 @@ fn needs_polling(path: &Path, mounts: &str) -> bool {
             let mut fields = line.split_whitespace();
             let mount_point = unescape_mount(fields.nth(1)?);
             let fs_type = fields.next()?;
-            path.starts_with(&mount_point).then_some((mount_point, fs_type))
+            path.starts_with(&mount_point)
+                .then_some((mount_point, fs_type))
         })
         .max_by_key(|(mount_point, _)| mount_point.components().count())
         .is_some_and(|(_, fs_type)| POLLED_FILESYSTEMS.contains(&fs_type))
@@ -181,13 +202,19 @@ none /mnt/wsl tmpfs rw,relatime 0 0
 
     #[test]
     fn polls_the_windows_drive_but_not_the_linux_disk() {
-        assert!(needs_polling(Path::new("/mnt/c/Users/me/code/app"), WSL_MOUNTS));
+        assert!(needs_polling(
+            Path::new("/mnt/c/Users/me/code/app"),
+            WSL_MOUNTS
+        ));
         assert!(!needs_polling(Path::new("/home/me/code/app"), WSL_MOUNTS));
     }
 
     #[test]
     fn the_most_specific_mount_point_wins() {
-        assert!(!needs_polling(Path::new("/mnt/c/Users/me/linux-disk/app"), WSL_MOUNTS));
+        assert!(!needs_polling(
+            Path::new("/mnt/c/Users/me/linux-disk/app"),
+            WSL_MOUNTS
+        ));
     }
 
     #[test]
@@ -202,14 +229,19 @@ none /mnt/wsl tmpfs rw,relatime 0 0
 
     #[test]
     fn decodes_escaped_spaces_in_mount_points() {
-        assert_eq!(unescape_mount("/mnt/my\\040drive"), PathBuf::from("/mnt/my drive"));
+        assert_eq!(
+            unescape_mount("/mnt/my\\040drive"),
+            PathBuf::from("/mnt/my drive")
+        );
         assert_eq!(unescape_mount("/plain"), PathBuf::from("/plain"));
     }
 
     #[test]
     fn keeps_changes_and_drops_reads() {
         assert!(is_relevant(&EventKind::Create(CreateKind::File)));
-        assert!(is_relevant(&EventKind::Modify(ModifyKind::Metadata(MetadataKind::WriteTime))));
+        assert!(is_relevant(&EventKind::Modify(ModifyKind::Metadata(
+            MetadataKind::WriteTime
+        ))));
         assert!(!is_relevant(&EventKind::Access(AccessKind::Any)));
     }
 }

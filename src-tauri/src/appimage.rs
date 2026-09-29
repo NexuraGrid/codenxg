@@ -47,7 +47,11 @@ pub fn child_env_changes() -> Vec<(OsString, Option<OsString>)> {
 }
 
 fn changes_for(vars: &[(OsString, OsString)]) -> Vec<(OsString, Option<OsString>)> {
-    let Some(appdir) = vars.iter().find(|(k, _)| k == "APPDIR").map(|(_, v)| v.to_string_lossy().into_owned()) else {
+    let Some(appdir) = vars
+        .iter()
+        .find(|(k, _)| k == "APPDIR")
+        .map(|(_, v)| v.to_string_lossy().into_owned())
+    else {
         return Vec::new();
     };
     let mut changes = Vec::new();
@@ -68,11 +72,19 @@ fn changes_for(vars: &[(OsString, OsString)]) -> Vec<(OsString, Option<OsString>
 
 fn keep_entries(value: &OsStr, keep: impl Fn(&str) -> bool) -> Option<OsString> {
     let value = value.to_string_lossy();
-    let kept: Vec<&str> = value.split(':').filter(|entry| !entry.is_empty() && keep(entry)).collect();
+    let kept: Vec<&str> = value
+        .split(':')
+        .filter(|entry| !entry.is_empty() && keep(entry))
+        .collect();
     (!kept.is_empty()).then(|| OsString::from(kept.join(":")))
 }
 
-fn push_change(changes: &mut Vec<(OsString, Option<OsString>)>, key: &OsStr, old: &OsStr, new: Option<OsString>) {
+fn push_change(
+    changes: &mut Vec<(OsString, Option<OsString>)>,
+    key: &OsStr,
+    old: &OsStr,
+    new: Option<OsString>,
+) {
     if new.as_deref() != Some(old) {
         changes.push((key.to_os_string(), new));
     }
@@ -139,16 +151,24 @@ mod tests {
     #[test]
     fn keeps_an_existing_preload_after_ours() {
         let lib = Path::new("/usr/lib/libwayland-client.so.0");
-        assert_eq!(preload_value(lib, None), OsString::from("/usr/lib/libwayland-client.so.0"));
+        assert_eq!(
+            preload_value(lib, None),
+            OsString::from("/usr/lib/libwayland-client.so.0")
+        );
         assert_eq!(
             preload_value(lib, Some("/x/y.so".into())),
             OsString::from("/usr/lib/libwayland-client.so.0:/x/y.so")
         );
-        assert_eq!(preload_value(lib, Some("".into())), OsString::from("/usr/lib/libwayland-client.so.0"));
+        assert_eq!(
+            preload_value(lib, Some("".into())),
+            OsString::from("/usr/lib/libwayland-client.so.0")
+        );
     }
 
     fn vars(list: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
-        list.iter().map(|(k, v)| (OsString::from(k), OsString::from(v))).collect()
+        list.iter()
+            .map(|(k, v)| (OsString::from(k), OsString::from(v)))
+            .collect()
     }
 
     #[test]
@@ -167,7 +187,12 @@ mod tests {
             ("LD_PRELOAD", "/usr/lib/libwayland-client.so.0:/opt/mine.so"),
             ("HOME", "/home/u"),
         ]));
-        let get = |name: &str| changes.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        let get = |name: &str| {
+            changes
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
         assert_eq!(get("PATH"), Some(Some("/usr/bin:/home/u/bin".into())));
         assert_eq!(get("PYTHONHOME"), Some(None));
         assert_eq!(get("LD_LIBRARY_PATH"), Some(None));

@@ -10,7 +10,10 @@ pub fn install_cli() -> Result<String, String> {
 /// whose runtime unmounts the app as soon as the launched process exits.
 #[cfg(target_os = "linux")]
 fn launcher_script(appimage: &std::path::Path) -> String {
-    let quoted = format!("'{}'", appimage.display().to_string().replace('\'', "'\\''"));
+    let quoted = format!(
+        "'{}'",
+        appimage.display().to_string().replace('\'', "'\\''")
+    );
     format!("#!/bin/sh\nexec setsid -f {quoted} \"$@\" >/dev/null 2>&1 </dev/null\n")
 }
 
@@ -21,10 +24,12 @@ fn install() -> Result<String, String> {
 
     // Set by the AppImage runtime. Packaged installs (.deb/.rpm) already put
     // `codenxg` on PATH, and a dev build has nothing stable to point at.
-    let appimage = std::env::var_os("APPIMAGE")
+    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from).ok_or(
+        "This is only needed for the AppImage build; other installs already provide `codenxg`.",
+    )?;
+    let home = std::env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or("This is only needed for the AppImage build; other installs already provide `codenxg`.")?;
-    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or("HOME is not set")?;
+        .ok_or("HOME is not set")?;
 
     let bin_dir = home.join(".local/bin");
     std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
@@ -35,12 +40,16 @@ fn install() -> Result<String, String> {
         std::fs::remove_file(&link).map_err(|e| e.to_string())?;
     }
     std::fs::write(&link, launcher_script(&appimage)).map_err(|e| e.to_string())?;
-    std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
 
     let icon_dir = home.join(".local/share/icons/hicolor/128x128/apps");
     std::fs::create_dir_all(&icon_dir).map_err(|e| e.to_string())?;
-    std::fs::write(icon_dir.join("codenxg.png"), include_bytes!("../../icons/128x128.png"))
-        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        icon_dir.join("codenxg.png"),
+        include_bytes!("../../icons/128x128.png"),
+    )
+    .map_err(|e| e.to_string())?;
 
     let apps_dir = home.join(".local/share/applications");
     std::fs::create_dir_all(&apps_dir).map_err(|e| e.to_string())?;
